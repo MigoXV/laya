@@ -1,0 +1,1 @@
+{"version":"0.2.0","configurations":[{"name":"Laya 服务","type":"debugpy","request":"launch","module":"laya_service.commands.app","envFile":"${workspaceFolder}/.env","args":["serve"],"console":"integratedTerminal"}]}

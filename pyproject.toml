@@ -1,0 +1,31 @@
+[project]
+name = "laya-service"
+version = "0.1.0"
+description = "本地 Laya typed decision 推理服务"
+authors = [{name = "migo", email = "1695587905@qq.com"}]
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = ["typer>=0.15,<1", "fastapi>=0.115,<1", "uvicorn>=0.34,<1", "pydantic-settings>=2.7,<3", "httpx>=0.28,<1", "numpy>=1.26,<3", "torch>=2.6,<3", "transformers>=5.0,<6", "safetensors>=0.5,<1"]
+
+[tool.poetry]
+packages = [{include = "laya_service", from = "src"}]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+pytest-asyncio = "^0.25"
+ruff = "^0.11"
+
+[tool.poetry.scripts]
+laya-service = "laya_service.commands.app:app"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[[tool.poetry.source]]
+name = "tuna"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+priority = "primary"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
