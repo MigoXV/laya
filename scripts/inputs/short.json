@@ -1,0 +1,13 @@
+{
+  "state": "小李负责测试，小王负责发布。",
+  "questions": {
+    "owner": {
+      "type": "choice",
+      "instructions": "谁负责测试？",
+      "criteria": [
+        "小李",
+        "小王"
+      ]
+    }
+  }
+}

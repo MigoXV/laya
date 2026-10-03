@@ -7,7 +7,11 @@
       "request": "launch",
       "module": "laya.commands.app",
       "envFile": "${workspaceFolder}/.env",
-      "args": ["serve"],
+      "args": [
+        "serve",
+        "--model-dir",
+        "${input:layaModelDir}"
+      ],
       "console": "integratedTerminal"
     },
     {
@@ -17,8 +21,17 @@
       "module": "examples.demo01.commands.app",
       "envFile": "${workspaceFolder}/.env",
       "preLaunchTask": "demo01: build",
-      "args": ["serve"],
+      "args": [
+        "serve"
+      ],
       "console": "integratedTerminal"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "layaModelDir",
+      "type": "promptString",
+      "description": "显式输入 FP16 或 W8A8 模型仓库目录"
     }
   ]
 }
