@@ -2,6 +2,12 @@
 
 data-bin/
 model-bin/
+# 模型权重与导出文件放在源码仓库外，避免进入后续提交。
+*.safetensors
+*.pt
+*.pth
+*.ckpt
+*.onnx
 outputs/
 # 基准目录只提交报告；实验输出在本地生成。
 /benchmarks/*
