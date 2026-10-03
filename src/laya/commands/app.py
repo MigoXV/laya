@@ -18,6 +18,18 @@ app = typer.Typer()
 
 
 @app.command()
+def quantize(
+    model_dir: Path = typer.Option(..., envvar="LAYA_MODEL_DIR", exists=True, file_okay=False),
+    output_dir: Path = typer.Option(..., file_okay=False),
+    device: str = typer.Option("cuda:0", envvar="LAYA_DEVICE"),
+):
+    """导出独立动态 W8A8 仓库；不覆盖目标，也不改动源模型。"""
+    from laya.quantization import export_w8a8
+
+    typer.echo(json.dumps(export_w8a8(model_dir, output_dir, device), ensure_ascii=False))
+
+
+@app.command()
 def inspect(model_dir: Path | None = typer.Option(None, envvar="LAYA_MODEL_DIR")):
     config = Config(**({"model_dir": model_dir} if model_dir is not None else {}))
     typer.echo(

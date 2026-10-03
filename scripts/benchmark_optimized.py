@@ -17,6 +17,7 @@ import httpx
 import typer
 
 from scripts.benchmark_support import command, compare, gpu_processes, stop, wait_for_gpu
+from laya.config import Config
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -91,9 +92,11 @@ def summarize(output, manifest):
 @app.command()
 def main(
     output: Path = typer.Option(ROOT / "benchmarks/torch_28_optimized"),
+    model_dir: Path | None = typer.Option(None, envvar="LAYA_MODEL_DIR"),
     include_compile: bool = typer.Option(True),
     repeats: int = typer.Option(2, min=1, max=2),
 ):
+    selected = Config(**({"model_dir": model_dir} if model_dir is not None else {})).model_dir
     alignment = json.loads((output / "alignment.json").read_text())
     assert alignment["completed"], "必须先通过完整 logits 对齐"
     output.mkdir(parents=True, exist_ok=True)
@@ -130,7 +133,7 @@ def main(
             with socket.socket() as sock:
                 sock.bind(("127.0.0.1", 0))
                 port = sock.getsockname()[1]
-            args = [sys.executable, "-m", "laya.commands.app", "serve", "--runner", variant["runner"],
+            args = [sys.executable, "-m", "laya.commands.app", "serve", "--model-dir", str(selected), "--runner", variant["runner"],
                     "--dtype", "fp16", "--host", "127.0.0.1", "--port", str(port)]
             session_env = {**env, "LAYA_MAX_BATCH_SIZE": str(variant["batch"]), "LAYA_GRAPH_STREAMS": str(variant["streams"])}
             profiles = ([[batch, length, 2] for length in [27, 512] for batch in [1, 2, 4, 8, 16]

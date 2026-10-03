@@ -2,6 +2,8 @@ import { defineConfig } from '@playwright/test'
 import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '../../..')
+const modelDir = process.env.LAYA_E2E_MODEL_DIR || process.env.LAYA_MODEL_DIR
+if (!modelDir) throw new Error('必须显式设置 LAYA_E2E_MODEL_DIR 或 LAYA_MODEL_DIR')
 const servicePort = process.env.LAYA_E2E_SERVICE_PORT || '11002'
 const demoPort = process.env.LAYA_E2E_DEMO_PORT || '11003'
 
@@ -17,7 +19,7 @@ export default defineConfig({
       command: 'poetry run python -m laya.commands.app serve', cwd: root,
       url: `http://127.0.0.1:${servicePort}/health/ready`, timeout: 180000,
       env: {
-        LAYA_MODEL_DIR: process.env.LAYA_E2E_MODEL_DIR || '/workspace/model-bin/MigoXV/laya-multilingual',
+        LAYA_MODEL_DIR: modelDir,
         LAYA_DEVICE: process.env.LAYA_E2E_DEVICE || 'cuda:0',
         LAYA_DTYPE: process.env.LAYA_E2E_DTYPE || 'fp16',
         LAYA_HOST: '127.0.0.1', LAYA_PORT: servicePort,

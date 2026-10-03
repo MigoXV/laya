@@ -58,11 +58,11 @@ LAYA_RUN_E2E=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run pytest tests/t
 ```python
 from pathlib import Path
 from laya.checks import check_reference
-from laya.config import DEFAULT_MODEL_DIR
+from laya.config import Config
 
 snapshot = Path("model-bin/convaiinnovations/laya")
 for device, dtype in (("cpu", "fp32"), ("cuda:0", "fp32"), ("cuda:0", "fp16")):
-    print(check_reference(DEFAULT_MODEL_DIR, snapshot, device, dtype))
+    print(check_reference(Config().model_dir, snapshot, device, dtype))
 ```
 
 ## 已通过的检查

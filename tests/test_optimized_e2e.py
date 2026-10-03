@@ -37,7 +37,8 @@ def test_real_optimized_concurrency_failure_and_restart(runner, tmp_path):
         "importance": {"type": "score", "instructions": "测试的重要程度？", "criteria": ["低", "中", "高"]},
         "holds": {"type": "noul", "instructions": "小李负责测试吗？"},
     }} for state in ["小李负责测试，小王负责发布。", "小王负责测试，小李负责发布。"]]
-    baseline = Runtime(Config(runner="eager", dtype="fp16", max_batch_size=1))
+    model_dir = os.getenv("LAYA_E2E_MODEL_DIR") or str(Config().model_dir)
+    baseline = Runtime(Config(model_dir=model_dir, runner="eager", dtype="fp16", max_batch_size=1))
     expected = [baseline.infer(DecisionRequest.model_validate(payload)) for payload in payloads]
     shapes = sorted({(len(item["ids"]), len(item["markers"])) for payload in payloads
                      for _, _, item in baseline.prepare(DecisionRequest.model_validate(payload))})
@@ -49,7 +50,7 @@ def test_real_optimized_concurrency_failure_and_restart(runner, tmp_path):
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]
     url = f"http://127.0.0.1:{port}"
-    args = [sys.executable, "-m", "laya.commands.app", "serve", "--runner", runner,
+    args = [sys.executable, "-m", "laya.commands.app", "serve", "--model-dir", model_dir, "--runner", runner,
             "--dtype", "fp16", "--max-batch-size", "16", "--graph-streams", "8",
             "--host", "127.0.0.1", "--port", str(port)]
     env = {**os.environ, "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1",

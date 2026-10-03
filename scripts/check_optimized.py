@@ -32,14 +32,16 @@ def key_for(batch, row):
 
 @app.command()
 def main(output: Path = typer.Option(Path("benchmarks/torch_28_optimized")),
+         model_dir: Path | None = typer.Option(None, envvar="LAYA_MODEL_DIR"),
          include_compile: bool = typer.Option(True),
          runner: list[str] | None = typer.Option(None),
          resume: bool = typer.Option(False)):
     output.mkdir(parents=True, exist_ok=True)
-    cases = alignment_cases()
+    selected = Config(**({"model_dir": model_dir} if model_dir is not None else {})).model_dir
+    cases = alignment_cases(selected)
     payloads = [DecisionRequest.model_validate(case) for case in cases]
     oracle, checks = {}, []
-    baseline = Runtime(Config(runner="eager", dtype="fp16", max_batch_size=1))
+    baseline = Runtime(Config(model_dir=selected, runner="eager", dtype="fp16", max_batch_size=1))
 
     def record(batch, logits, acts):
         logits, acts = logits.float().cpu().numpy(), acts.float().cpu().numpy()
@@ -73,7 +75,7 @@ def main(output: Path = typer.Option(Path("benchmarks/torch_28_optimized")),
     for runner, streams in variants:
         if any(item["runner"] == runner and item["streams"] == streams and item.get("aligned") for item in checks):
             continue
-        runtime = Runtime(Config(runner=runner, dtype="fp16", max_batch_size=16,
+        runtime = Runtime(Config(model_dir=selected, runner=runner, dtype="fp16", max_batch_size=16,
                                  graph_streams=streams, graph_cache_size=4))
         stats = {"runner": runner, "streams": streams, "model": runtime.info, "raw_samples": 0,
                  "max_decision_abs": 0.0, "max_act_abs": 0.0, "max_act_rel": 0.0,

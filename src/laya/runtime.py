@@ -14,6 +14,7 @@ from transformers import AutoConfig, AutoModel, PreTrainedTokenizerFast
 
 from .config import Config
 from .contracts import DecisionRequest
+from .quantization import read_quantization, explicit_heads, install_linears, validate_weights, fuse_norms
 from .reference import (
     DecisionModel,
     QTYPES,
@@ -91,9 +92,15 @@ def checked_sequence(tok, state, question, config):
 
 
 class EagerRunner:
-    def __init__(self, model, device, dtype):
+    def __init__(self, model, device, dtype, quantized=False, max_len=1024):
         self.model, self.device, self.dtype = model, device, dtype
         self.raw_observer = None
+        self.autocast = not quantized and dtype in (torch.float16, torch.bfloat16)
+        self.function = model
+        if quantized:
+            from .cuda_runner import PreparedModel
+
+            self.function = PreparedModel(model, max_len).eval()
 
     @torch.inference_mode()
     def execute(self, batch):
@@ -109,9 +116,9 @@ class EagerRunner:
         ]
         with torch.autocast(
             device_type=self.device.type, dtype=self.dtype,
-            enabled=self.dtype in (torch.float16, torch.bfloat16),
+            enabled=self.autocast,
         ):
-            logits, acts = self.model(*tensors)
+            logits, acts = self.function(*tensors)
         if self.raw_observer is not None:
             self.raw_observer(batch, logits, acts)
         return logits.float().cpu().numpy(), torch.softmax(
@@ -142,17 +149,22 @@ class Runtime:
         self.config = config
         self.device = torch.device(config.device)
         self.dtype = {"fp16": torch.float16, "bf16": torch.bfloat16, "fp32": torch.float32}[config.dtype]
+        root = config.model_dir
+        self.cfg = json.loads((root / "config.json").read_text())
+        if self.cfg.get("format_version") != 1:
+            raise ValueError("模型 config.json 的 format_version 必须为 1")
+        quantization = read_quantization(self.cfg)
+        if quantization and (self.device.type != "cuda" or self.dtype != torch.float16):
+            raise ValueError("w8a8_requires_cuda_and_fp16")
         if self.device.type == "cuda":
             if (
                 not torch.cuda.is_available()
                 or self.device.index >= torch.cuda.device_count()
             ):
                 raise ValueError("requested_cuda_unavailable")
+            if quantization and torch.cuda.get_device_capability(self.device) < (8, 0):
+                raise ValueError("w8a8_requires_sm80_or_newer")
             torch.cuda.set_device(self.device)
-        root = config.model_dir
-        self.cfg = json.loads((root / "config.json").read_text())
-        if self.cfg.get("format_version") != 1:
-            raise ValueError("模型 config.json 的 format_version 必须为 1")
         self.tok = PreTrainedTokenizerFast(
             tokenizer_file=str(root / "tokenizer.json"), **self.cfg["tokenizer"]
         )
@@ -163,24 +175,46 @@ class Runtime:
         )
         head = self.cfg["decision_head"]
         model = DecisionModel(encoder, head["layers"], head["num_actions"])
-        model.load_state_dict(load_file(str(root / "model.safetensors")), strict=True)
+        if quantization:
+            explicit_heads(model)
+            install_linears(model, quantization)
+        state = load_file(str(root / "model.safetensors"))
+        if quantization:
+            validate_weights(model, state)
+        model.load_state_dict(state, strict=True)
+        del state
         move_model(model, self.device, self.dtype).eval()
+        if quantization:
+            fuse_norms(model)
+            # 确保 CUDA 依赖在启动时检查，避免首个请求才发现缺少后端。
+            from . import int8_kernels
+
+            del int8_kernels
         if config.runner.startswith("cuda-graph"):
             from .cuda_runner import CudaGraphRunner
 
             self.runner = CudaGraphRunner(model, self.device, self.dtype, config,
-                                          self.cfg["input_limits"]["max_len"])
+                                          self.cfg["input_limits"]["max_len"], quantized=bool(quantization))
         else:
-            self.runner = EagerRunner(model, self.device, self.dtype)
+            self.runner = EagerRunner(model, self.device, self.dtype, bool(quantization),
+                                      self.cfg["input_limits"]["max_len"])
         with safe_open(root / "model.safetensors", framework="pt") as weights:
             parameter_count = sum(
                 int(np.prod(weights.get_slice(name).get_shape()))
-                for name in weights.keys() if name != "temperature"
+                for name in weights.keys() if name != "temperature" and not name.endswith(".weight_scales")
             )
+            parameter_bytes = sum(
+                weights.get_tensor(name).numel() * weights.get_tensor(name).element_size()
+                for name in weights.keys() if name != "temperature" and not name.endswith(".weight_scales")
+            ) if quantization else parameter_count * torch.empty((), dtype=self.dtype).element_size()
+            scale_bytes = sum(weights.get_tensor(name).numel() * 4 for name in weights.keys()
+                              if name.endswith(".weight_scales"))
         code_hash = hashlib.sha256()
         code_files = ["reference.py", "runtime.py", "contracts.py", "config.py"]
-        if config.runner.startswith("cuda-graph"):
+        if config.runner.startswith("cuda-graph") or quantization:
             code_files += ["cuda_runner.py"]
+        if quantization:
+            code_files += ["quantization.py", "int8_kernels.py"]
         for name in code_files:
             code_hash.update(Path(__file__).with_name(name).read_bytes())
         identity = hashlib.sha256(
@@ -205,9 +239,14 @@ class Runtime:
             "fingerprint": identity,
             "device": str(self.device),
             "dtype": config.dtype,
-            "autocast": self.dtype in (torch.float16, torch.bfloat16),
+            "autocast": not quantization and self.dtype in (torch.float16, torch.bfloat16),
             "parameter_count": parameter_count,
-            "parameter_bytes": parameter_count * torch.empty((), dtype=self.dtype).element_size(),
+            "parameter_bytes": parameter_bytes,
+            "quantization": ({"method": quantization.method, "version": quantization.version,
+                              "weight_bits": 8, "activation_bits": 8,
+                              "activation_scheme": quantization.activation_scheme,
+                              "quantized_modules": len(quantization.quantized_modules),
+                              "scale_bytes": scale_bytes} if quantization else None),
             "runner": config.runner,
             **getattr(self.runner, "info", {}),
             "max_len": self.cfg["input_limits"]["max_len"],

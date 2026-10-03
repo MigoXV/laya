@@ -6,14 +6,11 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-DEFAULT_MODEL_DIR = Path("/workspace/model-bin/MigoXV/laya-multilingual")
-
-
 class Config(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="LAYA_", env_file=".env", extra="ignore"
     )
-    model_dir: Path = DEFAULT_MODEL_DIR
+    model_dir: Path
     device: str = "cuda:0"
     dtype: Literal["fp16", "bf16", "fp32"] = "fp16"
     runner: Literal["eager", "cuda-graph", "cuda-graph-compile"] = "eager"

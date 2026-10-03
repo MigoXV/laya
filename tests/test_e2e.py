@@ -29,9 +29,8 @@ def service(request, tmp_path_factory):
     device, dtype = request.param
     if device.startswith("cuda") and not torch.cuda.is_available():
         pytest.skip("当前环境无 CUDA")
-    model_args = []
-    if model_dir := os.getenv("LAYA_E2E_MODEL_DIR"):
-        model_args = ["--model-dir", model_dir]
+    model_dir = os.getenv("LAYA_E2E_MODEL_DIR") or str(Config().model_dir)
+    model_args = ["--model-dir", model_dir]
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]

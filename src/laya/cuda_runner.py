@@ -53,15 +53,16 @@ class PreparedModel(nn.Module):
 
 
 class CudaGraphRunner:
-    def __init__(self, model, device, dtype, config, max_len=1024):
+    def __init__(self, model, device, dtype, config, max_len=1024, quantized=False):
         self.model, self.device, self.dtype = model, device, dtype
+        self.quantized = quantized
         self.prepared = PreparedModel(model, max_len).eval()
         self.max_len = max_len
         self.capacity = config.graph_cache_size
         self.graphs = OrderedDict()
         self.counters = Counter()
         self.capture_ms = 0.0
-        self.stream_count = config.graph_streams
+        self.stream_count = 1 if quantized else config.graph_streams
         self.raw_observer = None
         self.compiled = config.runner == "cuda-graph-compile"
         self.compile_capacity = config.compile_cache_size
@@ -74,7 +75,7 @@ class CudaGraphRunner:
             )
             self.function = torch.compile(
                 self.prepared, fullgraph=True, dynamic=False,
-                options={"emulate_precision_casts": True, "triton.cudagraphs": False},
+                options={"emulate_precision_casts": not quantized, "triton.cudagraphs": False},
             )
         self.info = {"attention_backend": "TORCH_SDPA", "head_compilation": self.compiled,
                      "compilation_mode": "INDUCTOR_FULL_MODEL" if self.compiled else "NONE",
@@ -82,9 +83,9 @@ class CudaGraphRunner:
                      "cudagraph_mode": "FULL_MODEL", "graph_cache_capacity": self.capacity,
                      "graph_shape_policy": "exact_sequence_power_of_two_batch",
                      "graph_streams": self.stream_count,
-                     "batch_execution": "independent_sequences",
+                     "batch_execution": "batched_sequences" if quantized else "independent_sequences",
                      "graph_prewarm_profiles": config.graph_prewarm_profiles,
-                     "emulate_eager_rounding": True}
+                     "emulate_eager_rounding": not quantized}
         for profile in config.graph_prewarm_profiles:
             self.prewarm(*profile)
 
@@ -103,6 +104,8 @@ class CudaGraphRunner:
     def forward(self, tensors):
         function = self.function
         shape = (tensors[0].shape[1], tensors[2].shape[1])
+        if self.quantized:
+            shape = (tensors[0].shape[0], *shape)
         if self.compiled:
             if shape in self.compiled_shapes or len(self.compiled_shapes) < self.compile_capacity:
                 self.compiled_shapes.add(shape)
@@ -110,10 +113,13 @@ class CudaGraphRunner:
                 function = self.prepared
                 self.compile_fallback_shapes.add(shape)
         with torch.autocast(device_type=self.device.type, dtype=self.dtype,
-                            enabled=self.dtype in (torch.float16, torch.bfloat16)):
+                            enabled=not self.quantized and self.dtype in (torch.float16, torch.bfloat16)):
             return function(*tensors)
 
     def sequences(self, tensors, root=None, branches=()):
+        if self.quantized:
+            logits, acts = self.forward(tensors)
+            return logits.float(), acts.float(), torch.softmax(acts.float(), -1)
         if root is not None:
             for branch in branches:
                 branch.wait_stream(root)
@@ -135,8 +141,8 @@ class CudaGraphRunner:
         started = perf_counter()
         static = [tensor.clone() for tensor in tensors]
         stream = torch.cuda.Stream(device=self.device)
-        branches = [torch.cuda.Stream(device=self.device)
-                    for _ in range(min(self.stream_count, static[0].shape[0]))]
+        branches = ([] if self.quantized else [torch.cuda.Stream(device=self.device)
+                    for _ in range(min(self.stream_count, static[0].shape[0]))])
         stream.wait_stream(torch.cuda.current_stream(self.device))
         with torch.cuda.stream(stream):
             for _ in range(3):

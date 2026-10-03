@@ -32,7 +32,7 @@ def stop(process):
             process.wait(timeout=5)
 
 
-def alignment_cases():
+def alignment_cases(model_dir=None):
     questions = [
         {"type": "choice", "instructions": "谁负责测试？", "criteria": ["小李", "小王"]},
         {"type": "score", "instructions": "测试的重要程度？", "criteria": ["低", "中", "高"]},
@@ -58,8 +58,9 @@ def alignment_cases():
     from laya.runtime import checked_sequence
     from transformers import PreTrainedTokenizerFast
 
-    config = json.loads((Config().model_dir / "config.json").read_text())
-    tok = PreTrainedTokenizerFast(tokenizer_file=str(Config().model_dir / "tokenizer.json"), **config["tokenizer"])
+    root = Config(**({"model_dir": model_dir} if model_dir is not None else {})).model_dir
+    config = json.loads((root / "config.json").read_text())
+    tok = PreTrainedTokenizerFast(tokenizer_file=str(root / "tokenizer.json"), **config["tokenizer"])
     q = DecisionRequest.model_validate(cases[0]).questions["q"]
     head, _ = checked_sequence(tok, "", q, config["input_limits"])
     state = ("a " * (1024 - len(head))).strip()
