@@ -12,7 +12,7 @@ import typer
 from laya.config import Config
 from laya.contracts import DecisionRequest
 from laya.runtime import Runtime
-from scripts.benchmark_runners import alignment_cases, compare
+from scripts.benchmark_support import alignment_cases, compare
 
 
 app = typer.Typer()
@@ -31,7 +31,7 @@ def key_for(batch, row):
 
 
 @app.command()
-def main(output: Path = typer.Option(Path("benchmarks/optimized_16")),
+def main(output: Path = typer.Option(Path("benchmarks/torch_28_optimized")),
          include_compile: bool = typer.Option(True),
          runner: list[str] | None = typer.Option(None),
          resume: bool = typer.Option(False)):
@@ -67,7 +67,6 @@ def main(output: Path = typer.Option(Path("benchmarks/optimized_16")),
     variants = [("cuda-graph", 1), ("cuda-graph", 8)]
     if include_compile:
         variants.append(("cuda-graph-compile", 8))
-    variants.extend([("vllm-eager", 1), ("vllm", 1)])
     if runner:
         variants = [variant for variant in variants if variant[0] in runner]
         assert variants and set(runner) == {variant[0] for variant in variants}

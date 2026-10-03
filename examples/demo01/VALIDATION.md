@@ -1,4 +1,4 @@
-> 以下保留 Torch 2.8.0／Transformers 5.18.0 的历史验收数据，不作为当前环境的测试结论。Torch 2.9.1、Transformers 4.57.6、vLLM 0.14.1 的重新对齐、16 路并发性能及兼容性记录见 [当前性能测试](../../benchmarks/cuda_precision_16/README.md)。
+> 以下为历史验收记录。当前采用 Torch 2.8.0、Transformers 4.57.6；当前环境的小规模冒烟记录见 [移除旧后端后的验证](../../benchmarks/torch_28_smoke/README.md)。
 
 # Demo 01 验证记录
 

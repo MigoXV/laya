@@ -13,19 +13,19 @@ poetry env use python3.10
 poetry install
 ```
 
-Torch 由环境单独管理，不写入 Poetry 依赖和锁文件。请在同一虚拟环境手动安装 **2.9.1**，按设备选择一条命令：
+Torch 由环境单独管理，不写入 Poetry 依赖和锁文件。请在同一虚拟环境手动安装 **2.8.0**，按设备选择一条命令：
 
 ```bash
 # CPU
-poetry run python -m pip install torch==2.9.1 --index-url https://download.pytorch.org/whl/cpu
+poetry run python -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cpu
 
 # NVIDIA CUDA 12.8
-poetry run python -m pip install torch==2.9.1 --index-url https://download.pytorch.org/whl/cu128
+poetry run python -m pip install torch==2.8.0 --index-url https://download.pytorch.org/whl/cu128
 
 poetry run python -c 'import torch; print(torch.__version__); print(torch.cuda.is_available())'
 ```
 
-安装源见 [PyTorch 2.9.1 官方说明](https://pytorch.org/get-started/previous-versions/#v291)。当前开发环境使用 `2.9.1+cu128`，并手动安装 vLLM `0.14.1`；vLLM 要求 Transformers `<5`，项目约束已同步为 `>=4.57.6,<5`。使用 `poetry install` 安装项目依赖，避免使用会清理手动依赖的 `poetry sync`。
+安装源见 [PyTorch 2.8.0 官方说明](https://pytorch.org/get-started/previous-versions/#v280)。当前开发环境使用 `2.8.0+cu128`，推理后端仅依赖 PyTorch 与 Transformers，无需其他推理引擎。现有 Transformers 约束为 `>=4.57.6,<5`。使用 `poetry install` 安装项目依赖，避免使用会清理手动安装 Torch 的 `poetry sync`。
 
 ## 启动服务
 
@@ -58,12 +58,6 @@ poetry run laya serve --runner cuda-graph --dtype fp16 --max-batch-size 16 --gra
 # 完整 CUDA Graph + 静态形状 torch.compile（初次编译耗时另计）
 poetry run laya serve --runner cuda-graph-compile --dtype fp16 --max-batch-size 16 --graph-streams 8
 
-# vLLM 原生 ModernBERT + 完整决策头／动作头
-poetry run laya serve --runner vllm --dtype fp16
-
-# vLLM 关闭编译和 CUDA Graph，使用相同模型做 eager 对照
-poetry run laya serve --runner vllm-eager --dtype fp16
-
 # 查看实际解析到的目录、配置和权重大小
 poetry run laya inspect
 ```
@@ -80,9 +74,7 @@ poetry run laya inspect
 | `POST /v1/decisions` | 提交决策请求 |
 | `GET /metrics` | 队列、计数和延迟统计 |
 
-`serve`、`infer` 支持 `--runner`／`LAYA_RUNNER`，可选 `eager`、`cuda-graph`、`cuda-graph-compile`、`vllm`、`vllm-eager`。后两者要求已安装 Torch 2.9.1、vLLM 0.14.1；使用 `cuda:0`，可通过 `CUDA_VISIBLE_DEVICES` 选择物理卡。安装当前包时会注册 vLLM 插件（已有环境可运行 `poetry install --only-root`，不会改动手工安装的 Torch）。完整权重仍从统一模型目录加载，不需另建 encoder 仓库。vLLM 的 pooling 接口只运输完整决策／动作 logits，公共 Runtime 负责相同的分词、校准和领域输出，不对 logits 进行 embedding 归一化。
-
-适配器保留全局／局部 RoPE theta=160000，在编码器和完整决策头使用相同的 autocast 策略。注意力采用与 eager 基线相同的 PyTorch SDPA 与闭区间局部 mask；vLLM 负责原生 ModernBERT 权重映射、执行调度和编码器编译。编译模式开启 `emulate_precision_casts`，保留 eager 的 FP16 中间舍入。`/v1/info` 报告实际加载的参数数量、字节数、参数 dtype、注意力后端、线程数、编译模式与 CUDA Graph 捕获尺寸。vLLM 的 GPU scheduler 仍限制为单序列；即使一次向它提交多个问题，也不会宣称启用了 GPU 张量合批。
+`serve`、`infer` 支持 `--runner`／`LAYA_RUNNER`，可选 `eager`、`cuda-graph`、`cuda-graph-compile`。三个后端共用完整权重、相同的分词、校准与领域输出。编码器保留全局／局部 RoPE theta=160000，注意力使用 PyTorch SDPA 与闭区间局部 mask。
 
 `cuda-graph` 捕获编码器、完整决策／动作头和动作 softmax，将多个独立序列分配到最多 8 条 CUDA stream，再用一次完整 Graph replay 执行整个调度批次。每条序列保持 eager batch=1 的计算形状；序列长度与选项数按精确值分组，不补齐它们，只把批次容量向上取到 1/2/4/8/16，额外行使用有效输入副本且丢弃其输出。这样既减少 CPU kernel 派发开销，也保留该模型敏感的 FP16 舍入行为。RoPE 缓存由原 HF 实现一次计算，参数仍是原始 FP16 权重。
 
@@ -139,8 +131,10 @@ pnpm --dir examples/demo01/web test:e2e
 
 真实测试默认使用 `/workspace/model-bin/MigoXV/laya-multilingual`，可设置 `LAYA_E2E_MODEL_DIR`。对齐的 Oracle 独立加载 `model-bin/convaiinnovations/laya/multilingual` 原始快照，并采用与服务相同的 FP16／FP32 参数和 autocast 策略；可通过 `LAYA_E2E_SNAPSHOT_DIR` 指定含原始 Python 文件与 `multilingual/` 的快照根目录。检查分词器、模型输入、决策／动作 logits、答案及概率，同精度决策 logits 使用绝对容差 `1e-5`，动作 logits 使用 `rtol=1e-6, atol=1e-5`；原始接口概率四位小数的舍入误差限为 `0.000051`，详见 [验证记录](examples/demo01/VALIDATION.md)。浏览器测试自动启动隔离服务与 Demo（端口 11002/11003），默认使用 CUDA FP16，界面核对实际设备与精度。可通过 `LAYA_E2E_DEVICE` 和 `LAYA_E2E_DTYPE` 修改；断连测试只模拟网络错误。默认 pytest 跳过需权重的 E2E。
 
-完整请求延迟与吞吐可用 `poetry run laya benchmark --concurrency 16 --samples 128 --rounds 3` 测量；使用 `--input-path` 指定请求 JSON，`--concurrency` 可重复。每种输入先串行预热 16 次，再按目标并发预热；输出逐请求原始延迟、错误数、排队／推理耗时及汇总 JSONL。接口返回完整 JSON，统计从发起 POST 到收完响应的延迟，不使用首包或 token 吞吐指标。CUDA FP32／FP16 × eager／vLLM eager／vLLM 编译的完整 logits 对齐、9216 次请求及资源数据见 [最终测试记录](benchmarks/vllm_16/README.md)。
+完整请求延迟与吞吐可用 `poetry run laya benchmark --concurrency 16 --samples 128 --rounds 3` 测量；使用 `--input-path` 指定请求 JSON，`--concurrency` 可重复。每种输入先串行预热 16 次，再按目标并发预热；输出逐请求原始延迟、错误数、排队／推理耗时及汇总 JSONL。接口返回完整 JSON，统计从发起 POST 到收完响应的延迟，不使用首包或 token 吞吐指标。
 
-完整模型优化的 [验证与性能记录](benchmarks/optimized_16/README.md) 包含 2,400 个双头原始 logits 检查和 24,576 次成功 HTTP 请求。A100 上，16 路并发的 27／512 token 输入，8 流 CUDA Graph 的吞吐为 eager FP16 的 **6.67／3.65 倍**，Graph + 静态编译为 **7.41／4.54 倍**；P95 也下降。交互服务推荐 `--runner cuda-graph --max-batch-size 16 --graph-streams 8`，保留 eager 作为默认行为基线；固定形状且提前预热的服务可使用编译模式。新形状的冷捕获／初次编译另计，编译可能耗时十几秒／形状。全部探索数据保留在 [首次探索记录](benchmarks/optimized_exploratory_16/README.md)。
+以下为 Torch 2.9.1 环境的历史数据，不能直接作为当前 Torch 2.8.0 的性能结论。完整模型优化的 [验证与性能记录](benchmarks/optimized_16/README.md) 包含 2,400 个双头原始 logits 检查和 24,576 次成功 HTTP 请求。A100 上，16 路并发的 27／512 token 输入，8 流 CUDA Graph 的吞吐为 eager FP16 的 **6.67／3.65 倍**，Graph + 静态编译为 **7.41／4.54 倍**；P95 也下降。交互服务推荐 `--runner cuda-graph --max-batch-size 16 --graph-streams 8`，保留 eager 作为默认行为基线；固定形状且提前预热的服务可使用编译模式。新形状的冷捕获／初次编译另计，编译可能耗时十几秒／形状。全部探索数据保留在 [首次探索记录](benchmarks/optimized_exploratory_16/README.md)。
+
+Torch 2.8.0 下移除旧后端后的极简验证见 [冒烟记录](benchmarks/torch_28_smoke/README.md)。本次仅做轻量检查和少量真实推理，没有重新执行完整测试或性能矩阵。
 
 第三方实现来源和许可证见 [THIRD_PARTY.md](THIRD_PARTY.md)。

@@ -156,27 +156,22 @@ class Runtime:
         self.tok = PreTrainedTokenizerFast(
             tokenizer_file=str(root / "tokenizer.json"), **self.cfg["tokenizer"]
         )
-        if config.runner in ("eager", "cuda-graph", "cuda-graph-compile"):
-            ecfg = encoder_config_for_runtime(self.cfg["encoder"])
-            ecfg.reference_compile = False
-            encoder = AutoModel.from_config(
-                ecfg, dtype=self.dtype, attn_implementation="sdpa", trust_remote_code=False
-            )
-            head = self.cfg["decision_head"]
-            model = DecisionModel(encoder, head["layers"], head["num_actions"])
-            model.load_state_dict(load_file(str(root / "model.safetensors")), strict=True)
-            move_model(model, self.device, self.dtype).eval()
-            if config.runner.startswith("cuda-graph"):
-                from .cuda_runner import CudaGraphRunner
+        ecfg = encoder_config_for_runtime(self.cfg["encoder"])
+        ecfg.reference_compile = False
+        encoder = AutoModel.from_config(
+            ecfg, dtype=self.dtype, attn_implementation="sdpa", trust_remote_code=False
+        )
+        head = self.cfg["decision_head"]
+        model = DecisionModel(encoder, head["layers"], head["num_actions"])
+        model.load_state_dict(load_file(str(root / "model.safetensors")), strict=True)
+        move_model(model, self.device, self.dtype).eval()
+        if config.runner.startswith("cuda-graph"):
+            from .cuda_runner import CudaGraphRunner
 
-                self.runner = CudaGraphRunner(model, self.device, self.dtype, config,
-                                              self.cfg["input_limits"]["max_len"])
-            else:
-                self.runner = EagerRunner(model, self.device, self.dtype)
+            self.runner = CudaGraphRunner(model, self.device, self.dtype, config,
+                                          self.cfg["input_limits"]["max_len"])
         else:
-            from .vllm_runner import VllmRunner
-
-            self.runner = VllmRunner(config, self.cfg, self.tok)
+            self.runner = EagerRunner(model, self.device, self.dtype)
         with safe_open(root / "model.safetensors", framework="pt") as weights:
             parameter_count = sum(
                 int(np.prod(weights.get_slice(name).get_shape()))
@@ -184,8 +179,6 @@ class Runtime:
             )
         code_hash = hashlib.sha256()
         code_files = ["reference.py", "runtime.py", "contracts.py", "config.py"]
-        if config.runner.startswith("vllm"):
-            code_files += ["vllm_model.py", "vllm_runner.py", "vllm_plugin.py"]
         if config.runner.startswith("cuda-graph"):
             code_files += ["cuda_runner.py"]
         for name in code_files:

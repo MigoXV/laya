@@ -141,7 +141,7 @@ class DecisionModel(nn.Module):
         return self.score_hidden(h, attention_mask, marker_pos, marker_mask, qtype)
 
     def score_hidden(self, h, attention_mask, marker_pos, marker_mask, qtype):
-        """完整决策与动作头；供 eager 和 vLLM 共用同一数学定义。"""
+        """完整决策与动作头；供 eager 和 CUDA Graph 共用同一数学定义。"""
         h = h + self.type_emb(qtype)[:, None, :]
         if self.head is not None:
             pad = ~attention_mask.bool()

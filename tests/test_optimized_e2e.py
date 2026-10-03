@@ -16,7 +16,7 @@ import pytest
 
 from laya.config import Config
 from laya.contracts import DecisionRequest
-from scripts.benchmark_runners import compare, stop
+from scripts.benchmark_support import compare, stop
 
 
 ROOT = Path(__file__).resolve().parents[1]

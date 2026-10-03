@@ -25,7 +25,7 @@ def service(request, tmp_path_factory):
         pytest.skip("设置 LAYA_RUN_E2E=1 启用真实模型测试")
     import torch
 
-    assert torch.__version__.split("+")[0] == "2.9.1"
+    assert torch.__version__.split("+")[0] == "2.8.0"
     device, dtype = request.param
     if device.startswith("cuda") and not torch.cuda.is_available():
         pytest.skip("当前环境无 CUDA")
@@ -80,7 +80,7 @@ def service(request, tmp_path_factory):
 
 def test_real_decisions_and_validation(service):
     client, metadata = service
-    assert metadata["ready"] and metadata["torch_version"].startswith("2.9.1")
+    assert metadata["ready"] and metadata["torch_version"].startswith("2.8.0")
     assert client.get("/health/live").json() == {"alive": True}
     payload = {
         "state": "小李负责测试，小王只负责发布。",

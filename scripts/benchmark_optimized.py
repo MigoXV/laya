@@ -1,4 +1,4 @@
-"""隔离 GPU 0，交错重复测量整模型 Graph／多流／编译及 vLLM。"""
+"""隔离 GPU 0，交错重复测量整模型 Graph／多流／编译。"""
 
 import asyncio
 import csv
@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 import httpx
 import typer
 
-from scripts.benchmark_runners import command, compare, gpu_processes, stop, wait_for_gpu
+from scripts.benchmark_support import command, compare, gpu_processes, stop, wait_for_gpu
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,8 +28,6 @@ VARIANTS = [
     {"label": "graph-streams4", "runner": "cuda-graph", "batch": 16, "streams": 4},
     {"label": "graph-streams8", "runner": "cuda-graph", "batch": 16, "streams": 8},
     {"label": "graph-compile", "runner": "cuda-graph-compile", "batch": 16, "streams": 8},
-    {"label": "vllm-eager", "runner": "vllm-eager", "batch": 16, "streams": 1},
-    {"label": "vllm", "runner": "vllm", "batch": 16, "streams": 1},
 ]
 
 
@@ -92,7 +90,7 @@ def summarize(output, manifest):
 
 @app.command()
 def main(
-    output: Path = typer.Option(ROOT / "benchmarks/optimized_16"),
+    output: Path = typer.Option(ROOT / "benchmarks/torch_28_optimized"),
     include_compile: bool = typer.Option(True),
     repeats: int = typer.Option(2, min=1, max=2),
 ):
@@ -108,7 +106,7 @@ def main(
     manifest = {
         "utc": datetime.now(timezone.utc).isoformat(), "revision": command(["git", "rev-parse", "HEAD"]),
         "workspace_diff": command(["git", "diff", "--", "src/laya"]),
-        "versions": {name: metadata.version(name) for name in ["torch", "vllm", "transformers", "triton"]},
+        "versions": {name: metadata.version(name) for name in ["torch", "transformers", "triton"]},
         "gpu": command(["nvidia-smi", "--id=0", "--query-gpu=uuid,name,driver_version", "--format=csv"]),
         "processes_before": gpu_processes(), "order": order, "sessions": [], "completed": False,
         "concurrency": [1, 16], "rounds": 3, "requests_per_round": 128,
@@ -116,7 +114,7 @@ def main(
                        "errors": 0, "mismatches": 0, "canonical_reference": "eager/fp16/batch1"},
     }
     for case in ["short", "long"]:
-        source = ROOT / "benchmarks/vllm_16" / f"{case}.json"
+        source = ROOT / "scripts/inputs" / f"{case}.json"
         (output / source.name).write_bytes(source.read_bytes())
     expected = alignment["baseline"]
     references = alignment["cases"]

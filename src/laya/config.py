@@ -16,7 +16,7 @@ class Config(BaseSettings):
     model_dir: Path = DEFAULT_MODEL_DIR
     device: str = "cuda:0"
     dtype: Literal["fp16", "bf16", "fp32"] = "fp16"
-    runner: Literal["eager", "cuda-graph", "cuda-graph-compile", "vllm", "vllm-eager"] = "eager"
+    runner: Literal["eager", "cuda-graph", "cuda-graph-compile"] = "eager"
     host: str = "0.0.0.0"
     port: int = Field(default=10002, ge=1, le=65535)
     max_inflight: int = Field(default=64, ge=1, le=256)
@@ -51,8 +51,6 @@ class Config(BaseSettings):
             raise ValueError("FP16 推理使用 CUDA；CPU 推理请显式指定 dtype=fp32")
         if self.runner.startswith("cuda-graph") and self.device == "cpu":
             raise ValueError("cuda-graph 需要 CUDA 设备")
-        if self.runner.startswith("vllm") and self.device != "cuda:0":
-            raise ValueError("vLLM 使用 cuda:0；可通过 CUDA_VISIBLE_DEVICES 选择物理卡")
         if self.graph_prewarm_profiles:
             if not self.runner.startswith("cuda-graph"):
                 raise ValueError("graph_prewarm_profiles 仅用于 CUDA Graph runner")
