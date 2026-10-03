@@ -4,9 +4,9 @@ import pytest
 from tokenizers import Tokenizer, models, pre_tokenizers
 from transformers import PreTrainedTokenizerFast
 
-from laya.contracts import Question
-from laya.reference import build_sequence
-from laya.runtime import checked_sequence, InputTooLong
+from laya.api.contracts import Question
+from tests.support.sequence import build_sequence
+from laya.inferencers.preprocessing import checked_sequence, InputTooLong
 
 
 @pytest.fixture

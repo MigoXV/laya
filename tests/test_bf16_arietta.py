@@ -4,7 +4,7 @@ import pytest
 
 
 def test_bf16_config(tmp_path):
-    from laya.config import Config
+    from laya.configs.settings import Config
 
     for name in ("model.safetensors", "tokenizer.json", "config.json"):
         (tmp_path / name).touch()
@@ -16,7 +16,7 @@ def test_bf16_config(tmp_path):
 
 def test_bf16_eager_autocast():
     torch = pytest.importorskip("torch")
-    from laya.runtime import EagerRunner
+    from laya.runners.eager import EagerRunner
 
     class Model(torch.nn.Module):
         def forward(self, *args):
@@ -109,7 +109,7 @@ def test_exported_bf16_http_lifecycle():
 
 
 def test_modern_rope_asset_uses_same_theta_on_legacy_transformers():
-    from laya.runtime import encoder_config_for_runtime
+    from laya.models.loading import encoder_config_for_runtime
     cfg=encoder_config_for_runtime({"model_type":"modernbert", "rope_parameters": {
         "full_attention":{"rope_type":"default","rope_theta":160000},
         "sliding_attention":{"rope_type":"default","rope_theta":160000}}})

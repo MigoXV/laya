@@ -10,9 +10,11 @@ from time import perf_counter
 import numpy as np
 import torch
 
-from .config import Config
-from .contracts import DecisionRequest
-from .runtime import Runtime, InputTooLong, move_model
+from laya.configs.settings import Config
+from laya.api.contracts import DecisionRequest
+from laya.inferencers.decision import DecisionInferencer
+from laya.inferencers.preprocessing import InputTooLong
+from laya.models.loading import move_model
 
 
 def check_reference(model_dir: Path, snapshot_dir: Path, device="cuda:0", dtype="fp16"):
@@ -33,7 +35,7 @@ def check_reference(model_dir: Path, snapshot_dir: Path, device="cuda:0", dtype=
         module = importlib.util.module_from_spec(spec)
         sys.modules[name] = module
         spec.loader.exec_module(module)
-    runtime = Runtime(Config(model_dir=model_dir, device=device, dtype=dtype))
+    inferencer = DecisionInferencer(Config(model_dir=model_dir, device=device, dtype=dtype))
     # Oracle 独立读取原始多语言快照，避免使用转换后的配置自我对照。
     # 原始快照也是 Transformers 5 配置。独立读取并临时转换供 v4 审计，
     # 不修改快照、不复用线上配置转换，以免二者同时采用错误的默认频率。
@@ -64,14 +66,14 @@ def check_reference(model_dir: Path, snapshot_dir: Path, device="cuda:0", dtype=
     # Oracle 与被测服务同精度，覆盖上游 GPU 默认的 BF16 autocast。
     original.dtype = reference_dtype
     reference_buffers = dict(original.model.named_buffers())
-    for name, buffer in runtime.runner.model.named_buffers():
+    for name, buffer in inferencer.runtime.runner.model.named_buffers():
         if "inv_freq" in name:
             assert buffer.dtype == reference_buffers[name].dtype
             np.testing.assert_array_equal(
                 buffer.cpu().numpy(), reference_buffers[name].cpu().numpy()
             )
-    assert runtime.tok.special_tokens_map == original.tok.special_tokens_map
-    assert json.loads(runtime.tok.backend_tokenizer.to_str()) == json.loads(
+    assert inferencer.runtime.tok.special_tokens_map == original.tok.special_tokens_map
+    assert json.loads(inferencer.runtime.tok.backend_tokenizer.to_str()) == json.loads(
         original.tok.backend_tokenizer.to_str()
     ), "分词器后端配置发生变化"
     maxima, act_maxima, act_relative_maxima, probability_maxima = [], [], [], []
@@ -91,7 +93,7 @@ def check_reference(model_dir: Path, snapshot_dir: Path, device="cuda:0", dtype=
     h1 = original.model.register_forward_hook(
         capture(reference_logits, reference_inputs)
     )
-    h2 = runtime.runner.model.register_forward_hook(
+    h2 = inferencer.runtime.runner.model.register_forward_hook(
         capture(new_logits, new_inputs)
     )
     cases = []
@@ -117,7 +119,7 @@ def check_reference(model_dir: Path, snapshot_dir: Path, device="cuda:0", dtype=
     started = perf_counter()
     try:
         for data in cases:
-            actual = runtime.infer(DecisionRequest.model_validate(data))
+            actual = inferencer.infer(DecisionRequest.model_validate(data))
             expected = original.system_one(data["state"], data["questions"])
             assert len(reference_inputs[-1]) == len(new_inputs[-1])
             for reference_input, new_input in zip(reference_inputs[-1], new_inputs[-1]):
@@ -183,7 +185,7 @@ def check_reference(model_dir: Path, snapshot_dir: Path, device="cuda:0", dtype=
             },
         ):
             try:
-                runtime.infer(DecisionRequest.model_validate(data))
+                inferencer.infer(DecisionRequest.model_validate(data))
             except InputTooLong:
                 pass
             else:
@@ -210,5 +212,5 @@ def check_reference(model_dir: Path, snapshot_dir: Path, device="cuda:0", dtype=
         "reference_dtype": dtype,
         "tolerance": tolerance,
         "elapsed_seconds": perf_counter() - started,
-        "fingerprint": runtime.info["fingerprint"],
+        "fingerprint": inferencer.runtime.info["fingerprint"],
     }

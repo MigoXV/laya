@@ -5,7 +5,7 @@ import sys
 
 import pytest
 
-from laya.engine import Engine, EngineError
+from laya.engine.core import Engine, EngineError
 from tests.test_service import make_engine
 
 

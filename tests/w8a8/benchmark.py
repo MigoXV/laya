@@ -14,11 +14,11 @@ import torch
 import triton
 import typer
 
-from laya.config import Config
-from laya.contracts import DecisionRequest
-from laya.cuda_runner import INPUT_KEYS
-from laya.reference import collate_items
-from laya.runtime import Runtime
+from laya.configs.settings import Config
+from laya.api.contracts import DecisionRequest
+from laya.runners.inputs import INPUT_KEYS
+from laya.inferencers.batching import collate_items
+from laya.inferencers.decision import DecisionInferencer
 
 from .kernels import EVIDENCE, TILES, TUNING, int_mm, quantize, quantize_weight, triton_gemm
 from .model import calibrate, eligible, explicit_heads, replace_linears, restore_linears
@@ -176,16 +176,16 @@ def profile_graph(graph):
 
 @torch.inference_mode()
 def model_benchmark(model_dir, samples, compiled=False):
-    runtime = Runtime(Config(model_dir=model_dir, runner="cuda-graph", dtype="fp16",
+    inferencer = DecisionInferencer(Config(model_dir=model_dir, runner="cuda-graph", dtype="fp16",
                              max_batch_size=16, graph_streams=8, graph_prewarm_profiles=[]))
-    runner = runtime.runner
+    runner = inferencer.runtime.runner
     prepared = runner.prepared
     inputs = {}
     for case in ("short", "long"):
         request = DecisionRequest.model_validate_json((PROJECT / f"scripts/inputs/{case}.json").read_text())
-        item = runtime.prepare(request)[0][2]
+        item = inferencer.prepare(request)[0][2]
         for batch in (1, 16):
-            collated = collate_items([[item] * batch], runtime.tok.pad_token_id)
+            collated = collate_items([[item] * batch], inferencer.runtime.tok.pad_token_id)
             inputs[(case, batch)] = [collated[key].cuda() for key in INPUT_KEYS]
     # 原生产实现先保存；显式注意力用于 FP16/W8A8 相同数学和相同张量布局。
     production = {}
@@ -198,8 +198,8 @@ def model_benchmark(model_dir, samples, compiled=False):
         graph.replay()
         torch.cuda.synchronize()
         references[key] = tuple(value.clone() for value in outputs)
-    original_heads = list(runtime.runner.model.head.layers)
-    explicit_heads(runtime.runner.model)
+    original_heads = list(inferencer.runtime.runner.model.head.layers)
+    explicit_heads(inferencer.runtime.runner.model)
     with torch.autocast("cuda", dtype=torch.float16):
         scales = calibrate(prepared, [inputs[(case, 1)] for case in ("short", "long")])
     covered = [{"name": name, "shape": list(module.weight.shape)}

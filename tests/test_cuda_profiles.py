@@ -3,8 +3,8 @@
 import pytest
 import torch
 
-from laya.config import Config
-from laya.cuda_runner import CachedRotary
+from laya.configs.settings import Config
+from laya.runners.prepared import CachedRotary
 
 
 @pytest.mark.parametrize("dtype", [torch.float16, torch.float32])

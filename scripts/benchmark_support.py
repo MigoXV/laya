@@ -53,9 +53,9 @@ def alignment_cases(model_dir=None):
             "type": "choice", "instructions": "版本编号？", "criteria": [str(i) for i in range(16)]}}},
     ])
     # 由公共 tokenizer 构造真实 1024 token 边界输入。
-    from laya.config import Config
-    from laya.contracts import DecisionRequest
-    from laya.runtime import checked_sequence
+    from laya.configs.settings import Config
+    from laya.api.contracts import DecisionRequest
+    from laya.inferencers.preprocessing import checked_sequence
     from transformers import PreTrainedTokenizerFast
 
     root = Config(**({"model_dir": model_dir} if model_dir is not None else {})).model_dir

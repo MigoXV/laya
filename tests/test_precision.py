@@ -8,8 +8,8 @@ import pytest
 @pytest.mark.parametrize("dtype_name", ["float16", "float32"])
 def test_decision_head_precision(dtype_name):
     torch = pytest.importorskip("torch")
-    from laya.reference import DecisionModel
-    from laya.runtime import move_model
+    from laya.models.decision import DecisionModel
+    from laya.models.loading import move_model
 
     class Encoder(torch.nn.Module):
         def __init__(self):
@@ -49,7 +49,7 @@ def test_decision_head_precision(dtype_name):
 
 def test_cpu_fp16_requires_explicit_supported_precision(tmp_path):
     from pydantic import ValidationError
-    from laya.config import Config
+    from laya.configs.settings import Config
 
     for name in ("model.safetensors", "config.json", "tokenizer.json"):
         (tmp_path / name).touch()
@@ -60,7 +60,7 @@ def test_cpu_fp16_requires_explicit_supported_precision(tmp_path):
 def test_modernbert_rope_config_matches_saved_frequencies():
     torch = pytest.importorskip("torch")
     from transformers import AutoModel
-    from laya.runtime import encoder_config_for_runtime
+    from laya.models.loading import encoder_config_for_runtime
 
     settings = {
         "model_type": "modernbert", "hidden_size": 64, "num_attention_heads": 1,

@@ -9,9 +9,9 @@ import numpy as np
 import torch
 import typer
 
-from laya.config import Config
-from laya.contracts import DecisionRequest
-from laya.runtime import Runtime
+from laya.configs.settings import Config
+from laya.api.contracts import DecisionRequest
+from laya.inferencers.decision import DecisionInferencer
 from scripts.benchmark_support import alignment_cases, compare
 
 
@@ -41,7 +41,7 @@ def main(output: Path = typer.Option(Path("benchmarks/torch_28_optimized")),
     cases = alignment_cases(selected)
     payloads = [DecisionRequest.model_validate(case) for case in cases]
     oracle, checks = {}, []
-    baseline = Runtime(Config(model_dir=selected, runner="eager", dtype="fp16", max_batch_size=1))
+    baseline = DecisionInferencer(Config(model_dir=selected, runner="eager", dtype="fp16", max_batch_size=1))
 
     def record(batch, logits, acts):
         logits, acts = logits.float().cpu().numpy(), acts.float().cpu().numpy()
@@ -49,9 +49,9 @@ def main(output: Path = typer.Option(Path("benchmarks/torch_28_optimized")),
             key, count = key_for(batch, row)
             oracle[key] = {"decision": logits[row, :count].tolist(), "act": acts[row].tolist()}
 
-    baseline.runner.raw_observer = record
+    baseline.runtime.runner.raw_observer = record
     expected = [baseline.infer(payload) for payload in payloads]
-    baseline_info = baseline.info
+    baseline_info = baseline.runtime.info
     baseline.close()
     del baseline
     gc.collect()
@@ -75,9 +75,9 @@ def main(output: Path = typer.Option(Path("benchmarks/torch_28_optimized")),
     for runner, streams in variants:
         if any(item["runner"] == runner and item["streams"] == streams and item.get("aligned") for item in checks):
             continue
-        runtime = Runtime(Config(model_dir=selected, runner=runner, dtype="fp16", max_batch_size=16,
+        inferencer = DecisionInferencer(Config(model_dir=selected, runner=runner, dtype="fp16", max_batch_size=16,
                                  graph_streams=streams, graph_cache_size=4))
-        stats = {"runner": runner, "streams": streams, "model": runtime.info, "raw_samples": 0,
+        stats = {"runner": runner, "streams": streams, "model": inferencer.runtime.info, "raw_samples": 0,
                  "max_decision_abs": 0.0, "max_act_abs": 0.0, "max_act_rel": 0.0,
                  "checks": []}
         checks.append(stats)
@@ -94,12 +94,12 @@ def main(output: Path = typer.Option(Path("benchmarks/torch_28_optimized")),
                 np.testing.assert_allclose(logits[row, :count], a, rtol=TOLERANCE["decision_rtol"], atol=TOLERANCE["decision_atol"])
                 np.testing.assert_allclose(acts[row], b, rtol=TOLERANCE["act_rtol"], atol=TOLERANCE["act_atol"])
 
-        runtime.runner.raw_observer = audit
+        inferencer.runtime.runner.raw_observer = audit
         try:
             for count in [1, 2, 4, 8, 16]:
                 actual = []
                 for payload in payloads:
-                    group = runtime.infer_many([payload] * count)
+                    group = inferencer.infer_many([payload] * count)
                     actual.append(group[0])
                     assert all(result["answers"] == group[0]["answers"] for result in group)
                 differences = compare(expected, actual)
@@ -107,16 +107,16 @@ def main(output: Path = typer.Option(Path("benchmarks/torch_28_optimized")),
                 assert all(value <= TOLERANCE[field] for field, value in differences["max_abs"].items())
                 stats["checks"].append({"count": count, **differences})
                 print(f"{runner}, streams={streams}, count={count}: 对齐通过", flush=True)
-            actual = runtime.infer_many(payloads)
+            actual = inferencer.infer_many(payloads)
             differences = compare(expected, actual)
             assert differences["choice_mismatches"] == 0
             assert all(value <= TOLERANCE[field] for field, value in differences["max_abs"].items())
             stats["mixed_requests"] = differences
-            stats["runner_metrics"] = getattr(runtime.runner, "metrics", lambda: {})()
+            stats["runner_metrics"] = getattr(inferencer.runtime.runner, "metrics", lambda: {})()
             stats["aligned"] = True
         finally:
-            runtime.close()
-            del runtime
+            inferencer.close()
+            del inferencer
             gc.collect()
             torch.cuda.empty_cache()
             path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")

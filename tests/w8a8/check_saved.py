@@ -17,12 +17,13 @@ import torch
 import typer
 from safetensors.torch import load_file
 
-from laya.config import Config
-from laya.contracts import DecisionRequest
-from laya.cuda_runner import INPUT_KEYS
-from laya.quantization import explicit_heads, eligible, file_record
-from laya.reference import collate_items
-from laya.runtime import Runtime
+from laya.configs.settings import Config
+from laya.api.contracts import DecisionRequest
+from laya.runners.inputs import INPUT_KEYS
+from laya.quantization.transforms import explicit_heads, eligible
+from laya.quantization.export import file_record
+from laya.inferencers.batching import collate_items
+from laya.inferencers.decision import DecisionInferencer
 from .accuracy.evaluate import load_cases, request_from_case
 from .benchmark import capture
 from .kernels import quantize_weight
@@ -33,18 +34,18 @@ ROOT = HERE.parents[1]
 app = typer.Typer()
 
 
-def release(runtime):
-    runtime.close()
+def release(inferencer):
+    inferencer.close()
     gc.collect()
     torch.cuda.empty_cache()
 
 
 @torch.inference_mode()
 def check_weights(source, saved):
-    baseline = Runtime(Config(model_dir=source, dtype="fp16", runner="eager"))
-    explicit_heads(baseline.runner.model)
+    baseline = DecisionInferencer(Config(model_dir=source, dtype="fp16", runner="eager"))
+    explicit_heads(baseline.runtime.runner.model)
     weights = load_file(str(saved / "model.safetensors"))
-    modules = eligible(baseline.runner.model)
+    modules = eligible(baseline.runtime.runner.model)
     quantized = set()
     for name, module in modules:
         qweight, scales = quantize_weight(module.weight)
@@ -52,7 +53,7 @@ def check_weights(source, saved):
         assert torch.equal(scales.cpu(), weights[f"{name}.weight_scales"]), name
         quantized.add(f"{name}.weight")
     remaining = 0
-    for name, value in baseline.runner.model.state_dict().items():
+    for name, value in baseline.runtime.runner.model.state_dict().items():
         if name not in quantized:
             assert torch.equal(value.cpu(), weights[name]), name
             remaining += 1
@@ -67,22 +68,22 @@ def check_weights(source, saved):
 
 @torch.inference_mode()
 def check_frozen(saved):
-    runtime = Runtime(Config(model_dir=saved, runner="eager", dtype="fp16", max_batch_size=16))
+    inferencer = DecisionInferencer(Config(model_dir=saved, runner="eager", dtype="fp16", max_batch_size=16))
     cases, _ = load_cases(HERE / "accuracy/data")
     frozen_path = HERE / "accuracy/results.json"
     frozen = json.loads(frozen_path.read_text())
     expected = {(row["id"], row["qid"]): row for row in frozen["raw"]}
     work = []
     for case in cases:
-        for qid, question, item in runtime.prepare(request_from_case(case["request"])):
+        for qid, question, item in inferencer.prepare(request_from_case(case["request"])):
             work.append((case["id"], qid, question, item))
     batch_size, length, markers = 16, 256, 6
 
     def inputs(rows):
         items = [row[3] for row in rows]
         items += [items[0]] * (batch_size - len(items))
-        batch = collate_items([items], runtime.tok.pad_token_id)
-        tensors = {"input_ids": torch.full((batch_size, length), runtime.tok.pad_token_id, dtype=torch.long),
+        batch = collate_items([items], inferencer.runtime.tok.pad_token_id)
+        tensors = {"input_ids": torch.full((batch_size, length), inferencer.runtime.tok.pad_token_id, dtype=torch.long),
                    "attention_mask": torch.zeros(batch_size, length, dtype=torch.long),
                    "marker_pos": torch.zeros(batch_size, markers, dtype=torch.long),
                    "marker_mask": torch.zeros(batch_size, markers, dtype=torch.bool), "qtype": batch["qtype"]}
@@ -91,7 +92,7 @@ def check_frozen(saved):
         return [tensors[key] for key in INPUT_KEYS]
 
     static = [t.cuda() for t in inputs(work[:16])]
-    prepared = runtime.runner.function
+    prepared = inferencer.runtime.runner.function
     prepared(*static)  # 先收集真实 INT8 指令，不在 Dynamo trace 中读取 asm。
     compiled = torch.compile(prepared, fullgraph=True, dynamic=False, options={"triton.cudagraphs": False})
     graph, outputs = capture(lambda function=compiled, tensors=static: function(*tensors))
@@ -109,7 +110,7 @@ def check_frozen(saved):
             original = row["predictions"]["w8a8-native-compile"]
             k = len(item["markers"])
             maxima["logits"] = max(maxima["logits"], float(np.abs(logits[i, :k] - original["logits"]).max()))
-            answer = runtime.answer(question, item, logits[i, :k], torch.tensor(acts[i]).softmax(-1).numpy())
+            answer = inferencer.answer(question, item, logits[i, :k], torch.tensor(acts[i]).softmax(-1).numpy())
             probabilities = np.array(list(answer["probabilities"].values()))
             maxima["probabilities"] = max(maxima["probabilities"], float(np.abs(probabilities - original["probabilities"]).max()))
             if question.type == "score":
@@ -119,18 +120,18 @@ def check_frozen(saved):
                 label_mismatches += label != original["label"]
                 correct += label == row["gold"]
                 classification_n += 1
-    from laya.int8_kernels import EVIDENCE
+    from laya.quantization.int8_kernels import EVIDENCE
     result = {"profile": [batch_size, length, markers], "questions": len(work),
               "label_mismatches_vs_frozen": label_mismatches, "max_abs_vs_frozen": maxima,
               "classification_correct": correct, "classification_n": classification_n,
-              "accuracy": correct / classification_n, "model": runtime.info,
+              "accuracy": correct / classification_n, "model": inferencer.runtime.info,
               "int8_evidence": dict(EVIDENCE), "frozen_results_sha256": file_record(frozen_path)["sha256"]}
     assert label_mismatches == 0, result
     assert maxima["probabilities"] <= 1e-5 and maxima["score"] <= 1e-5, result
     assert result["int8_evidence"]["int8_tensor_core_instructions"]
     graph.reset()
     del graph, outputs, compiled, prepared, static
-    release(runtime)
+    release(inferencer)
     return result
 
 
@@ -154,7 +155,7 @@ def check_service(saved, runner, log_dir):
             "holds": {"type": "noul", "instructions": "小李负责测试吗？"}}},
     ])
     # 每个后端以自身离线执行作为 oracle，避免把跨后端浮点/量化舍入当作存储错误。
-    offline = Runtime(Config(model_dir=saved, runner=runner, dtype="fp16", max_batch_size=16,
+    offline = DecisionInferencer(Config(model_dir=saved, runner=runner, dtype="fp16", max_batch_size=16,
                              graph_cache_size=4, compile_cache_size=16))
     expected = [offline.infer(DecisionRequest.model_validate(p)) for p in payloads]
     release(offline)

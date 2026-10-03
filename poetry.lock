@@ -496,6 +496,34 @@ url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 reference = "tuna"
 
 [[package]]
+name = "httpcore2"
+version = "2.13.1"
+description = "A minimal low-level HTTP client."
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+markers = "sys_platform != \"emscripten\""
+files = [
+    {file = "httpcore2-2.13.1-py3-none-any.whl", hash = "sha256:e1e05d4f25f7d7d496bfb96748f6f4b67657b03da069b3a68c36069f3db73d0a"},
+    {file = "httpcore2-2.13.1.tar.gz", hash = "sha256:e0aa977abe17e69a3b820a24542a6fa88702676d83880b8d194dcd18408e5103"},
+]
+
+[package.dependencies]
+h11 = ">=0.16"
+truststore = ">=0.10"
+
+[package.extras]
+asyncio = ["anyio (>=4.5.0,<5.0)"]
+http2 = ["h2 (>=3,<5)"]
+socks = ["socksio (==1.*)"]
+trio = ["trio (>=0.34.0,<1.0)"]
+
+[package.source]
+type = "legacy"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+reference = "tuna"
+
+[[package]]
 name = "httpx"
 version = "0.28.1"
 description = "The next generation HTTP client."
@@ -519,6 +547,57 @@ cli = ["click (==8.*)", "pygments (==2.*)", "rich (>=10,<14)"]
 http2 = ["h2 (>=3,<5)"]
 socks = ["socksio (==1.*)"]
 zstd = ["zstandard (>=0.18.0)"]
+
+[package.source]
+type = "legacy"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+reference = "tuna"
+
+[[package]]
+name = "httpx2"
+version = "2.13.1"
+description = "The next generation HTTP client."
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "httpx2-2.13.1-py3-none-any.whl", hash = "sha256:6dff50fabc270ee5fd25d845d0b078ed20564579744d6d962850975996d2f9a4"},
+    {file = "httpx2-2.13.1.tar.gz", hash = "sha256:e48744a19e3af5ee48313d0ce5fe941d5422fae5705ea922a4aabf94d7800dfa"},
+]
+
+[package.dependencies]
+anyio = {version = ">=4.10", markers = "sys_platform != \"emscripten\""}
+httpcore2 = {version = "2.13.1", markers = "sys_platform != \"emscripten\""}
+httpx2-jsfetch = {version = "*", markers = "sys_platform == \"emscripten\" and python_version >= \"3.12\""}
+idna = ">=3.18"
+truststore = {version = ">=0.10", markers = "sys_platform != \"emscripten\""}
+typing-extensions = {version = ">=4.5.0", markers = "python_version < \"3.13\""}
+
+[package.extras]
+brotli = ["brotli (>=1.2.0) ; platform_python_implementation == \"CPython\"", "brotlicffi (>=1.2.0.2) ; platform_python_implementation != \"CPython\""]
+cli = ["click (>=8.4.2)", "pygments (==2.*)", "rich (>=10,<16)"]
+http2 = ["h2 (>=3,<5)"]
+socks = ["socksio (==1.*)"]
+ws = ["wsproto (>=1.2)"]
+zstd = ["backports-zstd (>=1.0.0) ; python_version <= \"3.13\""]
+
+[package.source]
+type = "legacy"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+reference = "tuna"
+
+[[package]]
+name = "httpx2-jsfetch"
+version = "1.0"
+description = "httpx2 transports for Emscripten/Pyodide, backed by the JavaScript fetch API."
+optional = false
+python-versions = ">=3.12"
+groups = ["main"]
+markers = "sys_platform == \"emscripten\" and python_version == \"3.12\""
+files = [
+    {file = "httpx2_jsfetch-1.0-py3-none-any.whl", hash = "sha256:cb916b707601e69a07721aabc8f3f6659be3a6893bc1ff5c6f9e02241df2da32"},
+    {file = "httpx2_jsfetch-1.0.tar.gz", hash = "sha256:70a0e3eabfef7cce5ad9c629f7d01ca05e418f586646f4ddf14782e4c1454c60"},
+]
 
 [package.source]
 type = "legacy"
@@ -1473,6 +1552,27 @@ url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 reference = "tuna"
 
 [[package]]
+name = "tenacity"
+version = "9.1.4"
+description = "Retry code until it succeeds"
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "tenacity-9.1.4-py3-none-any.whl", hash = "sha256:6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55"},
+    {file = "tenacity-9.1.4.tar.gz", hash = "sha256:adb31d4c263f2bd041081ab33b498309a57c77f9acf2db65aadf0898179cf93a"},
+]
+
+[package.extras]
+doc = ["reno", "sphinx"]
+test = ["pytest", "tornado (>=4.5)", "typeguard"]
+
+[package.source]
+type = "legacy"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+reference = "tuna"
+
+[[package]]
 name = "tokenizers"
 version = "0.22.2"
 description = ""
@@ -1689,6 +1789,24 @@ url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 reference = "tuna"
 
 [[package]]
+name = "truststore"
+version = "0.10.4"
+description = "Verify certificates using native system trust stores"
+optional = false
+python-versions = ">= 3.10"
+groups = ["main"]
+markers = "sys_platform != \"emscripten\""
+files = [
+    {file = "truststore-0.10.4-py3-none-any.whl", hash = "sha256:adaeaecf1cbb5f4de3b1959b42d41f6fab57b2b1666adb59e89cb0b53361d981"},
+    {file = "truststore-0.10.4.tar.gz", hash = "sha256:9d91bd436463ad5e4ee4aba766628dd6cd7010cf3e2461756b3303710eebc301"},
+]
+
+[package.source]
+type = "legacy"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+reference = "tuna"
+
+[[package]]
 name = "typer"
 version = "0.27.2"
 description = "Typer, build great CLIs. Easy to code. Based on Python type hints."
@@ -1705,6 +1823,33 @@ annotated-doc = ">=0.0.2"
 colorama = {version = "*", markers = "platform_system == \"Windows\""}
 rich = ">=13.8.0"
 shellingham = ">=1.3.0"
+
+[package.source]
+type = "legacy"
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+reference = "tuna"
+
+[[package]]
+name = "typesafe-sdk"
+version = "0.7.2"
+description = "Python SDK for TypeSafe AI API."
+optional = false
+python-versions = ">=3.10"
+groups = ["main"]
+files = [
+    {file = "typesafe_sdk-0.7.2-py3-none-any.whl", hash = "sha256:0a961148187d52e18276ed7f2d02617cfac48e3b97673cb631a8749397d43d1e"},
+    {file = "typesafe_sdk-0.7.2.tar.gz", hash = "sha256:2434f4af5cdfc45d6ab5ff27048e8b257207f786b60456e69995e345b32e77e1"},
+]
+
+[package.dependencies]
+httpx2 = ">=2.0.0"
+pydantic = ">=2.12.0"
+pydantic-core = ">=2.41.1"
+tenacity = ">=9.0.0"
+typing-extensions = ">=4.13.0"
+
+[package.extras]
+http2 = ["httpx2[http2] (>=2.0.0)"]
 
 [package.source]
 type = "legacy"
@@ -1800,4 +1945,4 @@ reference = "tuna"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.13"
-content-hash = "3b6a1324a3958e68ebd519c8a39854fb9f38c944a34d5757a235562c441bc775"
+content-hash = "bf27721fc91649303d988e5f0a8bb4c95991ea54e80d4c60e6b461ebdc469bd1"
