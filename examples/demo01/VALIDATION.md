@@ -50,6 +50,9 @@ FP16 参数占用是 FP32 的一半；该数字只计算参数，不是进程总
 可复现对照命令：
 
 ```bash
+export LAYA_MODEL_DIR=/workspace/model-bin/MigoXV/laya-multilingual
+# 自行准备仓库外的上游多语言快照；该目录已不随本项目保留。
+export LAYA_E2E_SNAPSHOT_DIR=/workspace/model-bin/convaiinnovations/laya
 LAYA_RUN_E2E=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run pytest tests/test_e2e.py -q -s
 ```
 
@@ -57,10 +60,11 @@ LAYA_RUN_E2E=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 poetry run pytest tests/t
 
 ```python
 from pathlib import Path
+import os
 from laya.checks import check_reference
 from laya.config import Config
 
-snapshot = Path("model-bin/convaiinnovations/laya")
+snapshot = Path(os.environ["LAYA_E2E_SNAPSHOT_DIR"])
 for device, dtype in (("cpu", "fp32"), ("cuda:0", "fp32"), ("cuda:0", "fp16")):
     print(check_reference(Config().model_dir, snapshot, device, dtype))
 ```

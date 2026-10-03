@@ -55,6 +55,8 @@ CUDA_VISIBLE_DEVICES=0 TORCHINDUCTOR_COMPILE_THREADS=4 poetry run python -m test
   --source-dir /workspace/model-bin/MigoXV/laya-multilingual
 ```
 
-[check_saved.py](check_saved.py) 保留复现入口，运行时将权重校验、逐请求答案、缓存/批次指标及 INT8 指令证据写入本地 `saved-validation.json`。原逐题参考和验证输出已清理，由 `.gitignore` 忽略；历史产物可从 Git 查询。真实三路径验证执行于代码版本 `28214f2`；随后补充 eager W8A8 的代码指纹依赖、导出文件权限、GPU 0 验证环境约束及文档，未改变模型数学计算或权重。复现时用上述精度评测生成同输入、同实验实现的参考；报告中的历史对齐数值属于当时的执行结果。
+[check_saved.py](check_saved.py) 保留复现入口，运行时将权重校验、逐请求答案、缓存/批次指标及 INT8 指令证据写入本地 `saved-validation.json`。原逐题参考和验证输出已清理，由 `.gitignore` 忽略；原始产物已从 Git 历史移除。真实三路径验证执行于代码版本 `28214f2`；随后补充 eager W8A8 的代码指纹依赖、导出文件权限、GPU 0 验证环境约束及文档，未改变模型数学计算或权重。复现时用上述精度评测生成同输入、同实验实现的参考；报告中的历史对齐数值属于当时的执行结果。
 
 针对性 Python 检查 `tests/test_quantization.py`、`tests/test_precision.py`、`tests/test_cuda_profiles.py`、`tests/test_runtime_batching.py`、`tests/test_sequence.py` 合计 **35 passed**；补充 FP32 架构 bias 加载检查后量化测试单独 **12 passed**。`ruff check src/laya scripts tests` 和 `git diff --check` 通过。Demo 的 TypeScript 检查及 Playwright 测试配置加载通过，仅列出四个测试，没有运行完整浏览器测试或项目完整测试套件。
+
+上文的代码版本号为历史清理前的编号，仅记录当时的验证环境；Git 历史重写后提交编号已变化。

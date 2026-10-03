@@ -29,7 +29,7 @@ poetry run python -c 'import torch; print(torch.__version__); print(torch.cuda.i
 
 ## 启动服务
 
-默认模型目录为 `/workspace/model-bin/MigoXV/laya-multilingual`，只使用多语言版本。推理只需根目录的 `config.json`、`model.safetensors` 和 `tokenizer.json`（合计约 678 MB），另附中文说明、Apache-2.0 许可证和来源／SHA-256 清单。权重和分词器文件保持原始字节；全部推理配置合并到一份 `config.json`，移除不参与推理的训练字段。本项目不自动下载模型，也不执行模型目录里的 Python 文件。
+下面的示例使用仓库外的 `/workspace/model-bin/MigoXV/laya-multilingual`，只使用多语言版本；模型目录必须显式指定。推理只需根目录的 `config.json`、`model.safetensors` 和 `tokenizer.json`（合计约 678 MB），另附中文说明、Apache-2.0 许可证和来源／SHA-256 清单。权重和分词器文件保持原始字节；全部推理配置合并到一份 `config.json`，移除不参与推理的训练字段。本项目不自动下载模型，也不执行模型目录里的 Python 文件。
 
 ```text
 laya-multilingual/
@@ -150,10 +150,10 @@ pnpm --dir examples/demo01/web exec playwright install chromium
 pnpm --dir examples/demo01/web test:e2e
 ```
 
-真实测试必须通过 `LAYA_E2E_MODEL_DIR` 或 `LAYA_MODEL_DIR` 显式指定模型目录。对齐的 Oracle 独立加载 `model-bin/convaiinnovations/laya/multilingual` 原始快照，并采用与服务相同的 FP16／FP32 参数和 autocast 策略；可通过 `LAYA_E2E_SNAPSHOT_DIR` 指定含原始 Python 文件与 `multilingual/` 的快照根目录。检查分词器、模型输入、决策／动作 logits、答案及概率，同精度决策 logits 使用绝对容差 `1e-5`，动作 logits 使用 `rtol=1e-6, atol=1e-5`；原始接口概率四位小数的舍入误差限为 `0.000051`，详见 [验证记录](examples/demo01/VALIDATION.md)。浏览器测试自动启动隔离服务与 Demo（端口 11002/11003），默认使用 CUDA FP16，界面核对实际设备与精度。可通过 `LAYA_E2E_DEVICE` 和 `LAYA_E2E_DTYPE` 修改；断连测试只模拟网络错误。默认 pytest 跳过需权重的 E2E。
+真实测试必须通过 `LAYA_E2E_MODEL_DIR` 或 `LAYA_MODEL_DIR` 显式指定模型目录。对齐的 Oracle 需要另行准备上游多语言快照，并通过 `LAYA_E2E_SNAPSHOT_DIR` 显式指定仓库外含原始 Python 文件与 `multilingual/` 的快照根目录。Oracle 独立加载原始快照，采用与服务相同的 FP16／FP32 参数和 autocast 策略；项目不再保留旧快照下载。检查分词器、模型输入、决策／动作 logits、答案及概率，同精度决策 logits 使用绝对容差 `1e-5`，动作 logits 使用 `rtol=1e-6, atol=1e-5`；原始接口概率四位小数的舍入误差限为 `0.000051`，详见 [验证记录](examples/demo01/VALIDATION.md)。浏览器测试自动启动隔离服务与 Demo（端口 11002/11003），默认使用 CUDA FP16，界面核对实际设备与精度。可通过 `LAYA_E2E_DEVICE` 和 `LAYA_E2E_DTYPE` 修改；断连测试只模拟网络错误。默认 pytest 跳过需权重的 E2E。
 
 完整请求延迟与吞吐可用 `poetry run laya benchmark --concurrency 16 --samples 128 --rounds 3` 测量；使用 `--input-path` 指定请求 JSON，`--concurrency` 可重复。每种输入先串行预热 16 次，再按目标并发预热；输出逐请求原始延迟、错误数、排队／推理耗时及汇总 JSONL。接口返回完整 JSON，统计从发起 POST 到收完响应的延迟，不使用首包或 token 吞吐指标。
 
-当前 Torch 2.8.0 的保留报告见 [基准索引](benchmarks/README.md)，包括基础冒烟、W8A8 性能、标准答案精度和量化保存加载验证。旧 Torch 2.9.1 / vLLM 产物和新实验的原始输出已清理，历史版本可从 Git 查询；复现代码、冻结标准答案和必要配置继续保留，新生成的基准产物不提交。
+当前 Torch 2.8.0 的保留报告见 [基准索引](benchmarks/README.md)，包括基础冒烟、W8A8 性能、标准答案精度和量化保存加载验证。旧 Torch 2.9.1 / vLLM 产物和新实验的原始输出已从工作树及 Git 历史移除；复现代码、冻结标准答案和必要配置继续保留，新生成的基准产物不提交。
 
 第三方实现来源和许可证见 [THIRD_PARTY.md](THIRD_PARTY.md)。

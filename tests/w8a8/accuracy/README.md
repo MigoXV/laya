@@ -71,9 +71,11 @@ W8A8 的 **23/659（3.49%）** 个答案发生变化：**10 道原对新错、9 
 ### 记录与验证
 
 - [data/manifest.json](data/manifest.json)：来源 revision、冻结文件 SHA-256、抽样索引。
-- [evaluate.py](evaluate.py)：复现指标并在本地重新生成逐题结果；原输出已清理，可从 Git 历史查询。
+- [evaluate.py](evaluate.py)：复现指标并在本地重新生成逐题结果；原输出已从工作树及 Git 历史清理。
 - `poetry run pytest -q tests/w8a8/accuracy/test_metrics.py`：**2 passed**，核对准确率/翻转数/评分指标，并确认标准答案与元数据不进入模型请求。
 - `poetry run ruff check tests/w8a8`、`git diff --check`：通过。
 - 完整三路径精度实验已执行；没有运行项目完整测试套件，也没有重新做性能基准。
 
 结果中的 `revision` 是执行时的 HEAD `dd18e3d`。当时存在的请求过滤与 INT8 编译诊断修复随后提交于 `d794e2d`；`experiment_file_sha256` 在本次执行完成后、实验源码未再修改时补录，用于固定实际执行的代码。主服务和 Demo 保持运行。
+
+上文的代码版本号为历史清理前的编号，仅记录当时的验证环境；Git 历史重写后提交编号已变化。

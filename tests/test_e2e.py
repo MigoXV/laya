@@ -118,7 +118,9 @@ def test_reference_alignment(service):
 
     _, metadata = service
     model_dir = Path(os.getenv("LAYA_E2E_MODEL_DIR") or Config().model_dir)
-    snapshot_dir = Path(os.getenv("LAYA_E2E_SNAPSHOT_DIR", ROOT / "model-bin/convaiinnovations/laya"))
-    result = check_reference(model_dir, snapshot_dir, metadata["device"], metadata["dtype"])
+    snapshot_dir = os.getenv("LAYA_E2E_SNAPSHOT_DIR")
+    if not snapshot_dir:
+        pytest.fail("设置 LAYA_E2E_SNAPSHOT_DIR 指定仓库外的原始多语言快照，再执行对齐测试")
+    result = check_reference(model_dir, Path(snapshot_dir), metadata["device"], metadata["dtype"])
     assert result["fingerprint"] == metadata["fingerprint"]
     print(json.dumps({"alignment": result}, ensure_ascii=False))
