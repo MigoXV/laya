@@ -138,6 +138,8 @@ src/web/dist/
 .npm/
 pnpm-debug.log*
 *.tsbuildinfo
+playwright-report/
+test-results/
 
 # Spyder project settings
 .spyderproject

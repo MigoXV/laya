@@ -1,1 +1,24 @@
-{"version":"0.2.0","configurations":[{"name":"Laya 服务","type":"debugpy","request":"launch","module":"laya_service.commands.app","envFile":"${workspaceFolder}/.env","args":["serve"],"console":"integratedTerminal"}]}
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Laya 服务",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "laya.commands.app",
+      "envFile": "${workspaceFolder}/.env",
+      "args": ["serve"],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Laya Demo 01",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "examples.demo01.commands.app",
+      "envFile": "${workspaceFolder}/.env",
+      "preLaunchTask": "demo01: build",
+      "args": ["serve"],
+      "console": "integratedTerminal"
+    }
+  ]
+}
