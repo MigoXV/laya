@@ -12,22 +12,26 @@ import time
 import httpx
 import pytest
 
+from laya.config import Config
+
 
 pytestmark = pytest.mark.e2e
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.fixture(params=["cpu", "cuda:0"], scope="module")
+@pytest.fixture(params=[("cpu", "fp32"), ("cuda:0", "fp32"), ("cuda:0", "fp16")], scope="module")
 def service(request, tmp_path_factory):
     if os.getenv("LAYA_RUN_E2E") != "1":
         pytest.skip("设置 LAYA_RUN_E2E=1 启用真实模型测试")
     import torch
 
-    assert torch.__version__.split("+")[0] == "2.8.0"
-    device = request.param
+    assert torch.__version__.split("+")[0] == "2.9.1"
+    device, dtype = request.param
     if device.startswith("cuda") and not torch.cuda.is_available():
         pytest.skip("当前环境无 CUDA")
-    model_dir = Path(os.getenv("LAYA_E2E_MODEL_DIR", ROOT / "model-bin/convaiinnovations/laya/multilingual"))
+    model_args = []
+    if model_dir := os.getenv("LAYA_E2E_MODEL_DIR"):
+        model_args = ["--model-dir", model_dir]
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         port = listener.getsockname()[1]
@@ -35,8 +39,8 @@ def service(request, tmp_path_factory):
     worker_pid = None
     with log_path.open("w+") as logs:
         process = subprocess.Popen(
-            [sys.executable, "-m", "laya.commands.app", "serve", "--model-dir", str(model_dir),
-             "--device", device, "--host", "127.0.0.1", "--port", str(port)],
+            [sys.executable, "-m", "laya.commands.app", "serve", *model_args,
+             "--device", device, "--dtype", dtype, "--host", "127.0.0.1", "--port", str(port)],
             cwd=ROOT, stdout=logs, stderr=logs,
             env={**os.environ, "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"},
         )
@@ -55,6 +59,10 @@ def service(request, tmp_path_factory):
                 else:
                     pytest.fail("服务未在 180 秒内就绪\n" + log_path.read_text()[-6000:])
                 metadata = client.get("/v1/info").json()
+                assert metadata["dtype"] == dtype
+                assert metadata["autocast"] == (dtype == "fp16")
+                assert metadata["parameter_count"] == 321908995
+                assert metadata["parameter_bytes"] == 321908995 * (2 if dtype == "fp16" else 4)
                 worker_pid = metadata["worker_pid"]
                 yield client, metadata
         finally:
@@ -72,7 +80,7 @@ def service(request, tmp_path_factory):
 
 def test_real_decisions_and_validation(service):
     client, metadata = service
-    assert metadata["ready"] and metadata["torch_version"].startswith("2.8.0")
+    assert metadata["ready"] and metadata["torch_version"].startswith("2.9.1")
     assert client.get("/health/live").json() == {"alive": True}
     payload = {
         "state": "小李负责测试，小王只负责发布。",
@@ -101,6 +109,17 @@ def test_real_decisions_and_validation(service):
     assert oversized.json()["error"] == "state_token_budget_exceeded"
     assert client.post("/v1/decisions", content="x" * 262145).status_code == 413
     assert client.get("/health/ready").status_code == 200
-    print(json.dumps({"device": metadata["device"], "torch": metadata["torch_version"],
+    print(json.dumps({"device": metadata["device"], "dtype": metadata["dtype"], "torch": metadata["torch_version"],
                       "fingerprint": metadata["fingerprint"], "answers": result["answers"],
                       "timings": result["timings"]}, ensure_ascii=False))
+
+
+def test_reference_alignment(service):
+    from laya.checks import check_reference
+
+    _, metadata = service
+    model_dir = Path(os.getenv("LAYA_E2E_MODEL_DIR") or Config().model_dir)
+    snapshot_dir = Path(os.getenv("LAYA_E2E_SNAPSHOT_DIR", ROOT / "model-bin/convaiinnovations/laya"))
+    result = check_reference(model_dir, snapshot_dir, metadata["device"], metadata["dtype"])
+    assert result["fingerprint"] == metadata["fingerprint"]
+    print(json.dumps({"alignment": result}, ensure_ascii=False))

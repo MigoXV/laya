@@ -17,8 +17,9 @@ export default defineConfig({
       command: 'poetry run python -m laya.commands.app serve', cwd: root,
       url: `http://127.0.0.1:${servicePort}/health/ready`, timeout: 180000,
       env: {
-        LAYA_MODEL_DIR: process.env.LAYA_E2E_MODEL_DIR || resolve(root, 'model-bin/convaiinnovations/laya/multilingual'),
-        LAYA_DEVICE: process.env.LAYA_E2E_DEVICE || 'cpu',
+        LAYA_MODEL_DIR: process.env.LAYA_E2E_MODEL_DIR || '/workspace/model-bin/MigoXV/laya-multilingual',
+        LAYA_DEVICE: process.env.LAYA_E2E_DEVICE || 'cuda:0',
+        LAYA_DTYPE: process.env.LAYA_E2E_DTYPE || 'fp16',
         LAYA_HOST: '127.0.0.1', LAYA_PORT: servicePort,
         HF_HUB_OFFLINE: '1', TRANSFORMERS_OFFLINE: '1',
       },

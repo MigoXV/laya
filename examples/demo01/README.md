@@ -8,7 +8,7 @@
 
 ```bash
 # 终端一：启动推理服务
-poetry run laya serve --model-dir model-bin/convaiinnovations/laya/multilingual
+poetry run laya serve
 
 # 终端二：首次安装、构建并启动 Demo
 pnpm --dir examples/demo01/web install
@@ -55,7 +55,7 @@ pnpm --dir examples/demo01/web test:e2e
 
 本次真实 CPU、CUDA、参考实现对照与浏览器结果见 [验证记录](VALIDATION.md)。
 
-默认测试端口为 11002/11003，可通过 `LAYA_E2E_SERVICE_PORT`、`LAYA_E2E_DEMO_PORT` 更改；`LAYA_E2E_MODEL_DIR` 可更改本地模型路径，`LAYA_E2E_DEVICE` 可选择 `cpu` 或 `cuda:0`。
+默认测试端口为 11002/11003，可通过 `LAYA_E2E_SERVICE_PORT`、`LAYA_E2E_DEMO_PORT` 更改；`LAYA_E2E_MODEL_DIR` 可更改本地模型路径。默认连接 CUDA FP16 模型服务；通过 `LAYA_E2E_DEVICE` 和 `LAYA_E2E_DTYPE` 可选择 CUDA FP16／FP32，或同时设置 `LAYA_E2E_DEVICE=cpu LAYA_E2E_DTYPE=fp32` 使用 CPU 基线。界面显示并验证实际设备与精度。
 
 需要热更新时先启动 Demo 后端，再运行 `pnpm --dir examples/demo01/web dev`；Vite 会把 `/api` 转发到 Demo 后端。正常使用由 Demo 后端托管构建产物，不需要常驻 Vite。
 

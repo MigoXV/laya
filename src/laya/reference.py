@@ -138,6 +138,10 @@ class DecisionModel(nn.Module):
         ).last_hidden_state
         if detach_encoder:
             h = h.detach()
+        return self.score_hidden(h, attention_mask, marker_pos, marker_mask, qtype)
+
+    def score_hidden(self, h, attention_mask, marker_pos, marker_mask, qtype):
+        """完整决策与动作头；供 eager 和 vLLM 共用同一数学定义。"""
         h = h + self.type_emb(qtype)[:, None, :]
         if self.head is not None:
             pad = ~attention_mask.bool()
@@ -163,7 +167,8 @@ class DecisionModel(nn.Module):
         top2 = p.topk(2, -1).values
         feats = torch.stack([top2[:, 0], top2[:, 0] - top2[:, 1], ent, k / 255.0], -1)
         pooled = h[:, 0].float()
-        act_logits = self.act_head(torch.cat([pooled, feats], -1))
+        act_input = torch.cat([pooled, feats], -1).to(self.act_head[0].weight.dtype)
+        act_logits = self.act_head(act_input)
         return logits, act_logits
 
 

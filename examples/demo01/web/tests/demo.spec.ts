@@ -5,6 +5,9 @@ import type { DecisionResponse } from '../src/types'
 test('真实模型三种问题：图表、数值与服务响应一致', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByText('服务已就绪', { exact: true })).toBeVisible()
+  const device = process.env.LAYA_E2E_DEVICE || 'cuda:0'
+  const dtype = process.env.LAYA_E2E_DTYPE || 'fp16'
+  await expect(page.getByText(`${device} / ${dtype} / eager`, { exact: true })).toBeVisible()
   for (const type of ['choice', 'score', 'noul']) {
     await page.getByLabel('快速示例').selectOption(type)
     const responsePromise = page.waitForResponse((response) => response.url().endsWith('/api/v1/decisions'))

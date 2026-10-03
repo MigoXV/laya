@@ -45,6 +45,10 @@ class Engine:
             for key in ("queue_ms", "preprocess_ms", "inference_ms")
         }
         self.active = None
+        self.request_batches = Counter()
+        self.model_batches = Counter()
+        self.batch_tokens = self.padded_tokens = 0
+        self.runner_metrics = {}
 
     async def start(self):
         try:
@@ -52,7 +56,10 @@ class Engine:
                 *self.command,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
-                limit=1024 * 1024,
+                # choice 的获选标签会在 probabilities 和 choice 中各出现一次。
+                # 批次正文与返回行都必须有容量，不能沿用单请求的 1 MiB 上限。
+                limit=1024 * 1024 + 2 * self.config.max_body_bytes
+                * getattr(self.config, "max_batch_size", 1),
             )
             line = await asyncio.wait_for(
                 self.process.stdout.readline(), self.config.startup_timeout
@@ -73,8 +80,9 @@ class Engine:
             raise
 
     def fail_pending(self, reason):
-        if self.active and not self.active.future.done():
-            self.active.future.set_exception(EngineError(reason))
+        for job in self.active or []:
+            if not job.future.done():
+                job.future.set_exception(EngineError(reason))
         while not self.queue.empty():
             job = self.queue.get_nowait()
             if not job.future.done():
@@ -122,17 +130,41 @@ class Engine:
     async def dispatch(self):
         try:
             while self.ready:
-                job = await self.queue.get()
-                self.active = job
+                first = await self.queue.get()
+                self.active = [first]
                 try:
-                    if job.future.done() or monotonic() >= job.deadline:
-                        if not job.future.done():
-                            job.future.set_exception(EngineError("queue_deadline", 504))
-                        self.counters["skipped"] += 1
+                    capacity = getattr(self.config, "max_batch_size", 1)
+                    until = min(first.enqueued + getattr(self.config, "batch_wait_ms", 0) / 1000,
+                                first.deadline)
+                    while len(self.active) < capacity:
+                        if not self.queue.empty():
+                            self.active.append(self.queue.get_nowait())
+                        elif monotonic() < until:
+                            try:
+                                self.active.append(await asyncio.wait_for(self.queue.get(), until - monotonic()))
+                            except asyncio.TimeoutError:
+                                break
+                        else:
+                            break
+                    jobs, queue_times = [], []
+                    for job in self.active:
+                        if job.future.done() or monotonic() >= job.deadline:
+                            if not job.future.done():
+                                job.future.set_exception(EngineError("queue_deadline", 504))
+                            self.counters["skipped"] += 1
+                        else:
+                            jobs.append(job)
+                            queue_times.append((monotonic() - job.enqueued) * 1000)
+                    if not jobs:
                         continue
-                    queue_ms = (monotonic() - job.enqueued) * 1000
+                    payload = jobs[0].payload if capacity == 1 else {
+                        "version": 1, "op": "infer_batch",
+                        "items": [{"id": i, "payload": job.payload} for i, job in enumerate(jobs)],
+                    }
+                    self.request_batches[len(jobs)] += 1
+                    self.counters["worker_calls"] += 1
                     self.process.stdin.write(
-                        (json.dumps(job.payload, ensure_ascii=False) + "\n").encode()
+                        (json.dumps(payload, ensure_ascii=False) + "\n").encode()
                     )
                     await self.process.stdin.drain()
                     # 单请求 deadline 过后仍需读走对应结果；硬挂起则失败并终止 Worker。
@@ -143,29 +175,43 @@ class Engine:
                     if not raw:
                         raise EngineError("worker_disconnected")
                     reply = json.loads(raw)
-                    if job.future.done() or monotonic() >= job.deadline:
-                        self.counters["discarded"] += 1
-                        if not job.future.done():
-                            job.future.set_exception(
-                                EngineError("deadline_exceeded", 504)
-                            )
-                    elif "error" in reply:
-                        self.counters["failed"] += 1
-                        job.future.set_exception(
-                            EngineError(reply["error"], reply.get("status", 500))
-                        )
+                    for batch in reply.get("batches", []):
+                        self.model_batches[batch["size"]] += 1
+                        self.batch_tokens += batch["tokens"]
+                        self.padded_tokens += batch.get("padded_size", batch["size"]) * batch["length"]
+                    self.runner_metrics = reply.get("runner_metrics", {})
+                    if "error" in reply:
+                        replies = [reply] * len(jobs)
+                    elif capacity == 1:
+                        replies = [reply]
                     else:
-                        result = reply["result"]
-                        result.setdefault("timings", {})["queue_ms"] = queue_ms
-                        for key, values in self.stage_times.items():
-                            if key in result["timings"]:
-                                values.append(result["timings"][key])
-                        job.future.set_result(result)
-                        self.counters["completed"] += 1
+                        if reply.get("version") != 1 or len(reply["replies"]) != len(jobs):
+                            raise EngineError("worker_batch_protocol_mismatch")
+                        by_id = {item["id"]: item for item in reply["replies"]}
+                        if set(by_id) != set(range(len(jobs))):
+                            raise EngineError("worker_batch_ids_mismatch")
+                        replies = [by_id[i] for i in range(len(jobs))]
+                    for job, response, queue_ms in zip(jobs, replies, queue_times):
+                        if job.future.done() or monotonic() >= job.deadline:
+                            self.counters["discarded"] += 1
+                            if not job.future.done():
+                                job.future.set_exception(EngineError("deadline_exceeded", 504))
+                        elif "error" in response:
+                            self.counters["failed"] += 1
+                            job.future.set_exception(EngineError(response["error"], response.get("status", 500)))
+                        else:
+                            result = response["result"]
+                            result.setdefault("timings", {})["queue_ms"] = queue_ms
+                            for key, values in self.stage_times.items():
+                                if key in result["timings"]:
+                                    values.append(result["timings"][key])
+                            job.future.set_result(result)
+                            self.counters["completed"] += 1
                 finally:
-                    self.queue.task_done()
+                    for job in self.active or []:
+                        self.queue.task_done()
                     # 异常路径必须保留 active，供统一失败处理完成 Future。
-                    if job.future.done():
+                    if all(job.future.done() for job in self.active or []):
                         self.active = None
         except asyncio.CancelledError:
             raise
@@ -182,7 +228,7 @@ class Engine:
             "ready": self.ready,
             "queue_depth": self.queue.qsize(),
             "queue_capacity": self.config.queue_size,
-            "active": int(self.active is not None),
+            "active": len(self.active or []),
             "counters": dict(self.counters),
             "latency_ms": {
                 f"p{p}": values[min(len(values) - 1, int((len(values) - 1) * p / 100))]
@@ -191,6 +237,14 @@ class Engine:
                 for p in (50, 95, 99)
             },
             "latency_window": len(values),
+            "batching": {
+                "max_batch_size": getattr(self.config, "max_batch_size", 1),
+                "batch_wait_ms": getattr(self.config, "batch_wait_ms", 0),
+                "request_batch_histogram": dict(self.request_batches),
+                "model_batch_histogram": dict(self.model_batches),
+                "token_fill_ratio": self.batch_tokens / self.padded_tokens if self.padded_tokens else None,
+            },
+            "runner": self.runner_metrics,
             "stages_mean_ms": {
                 k: sum(v) / len(v) if v else None for k, v in self.stage_times.items()
             },
