@@ -17,7 +17,7 @@ import httpx
 import typer
 
 from scripts.benchmark_support import command, compare, gpu_processes, stop, wait_for_gpu
-from laya.config import Config
+from laya.configs.settings import Config
 
 
 ROOT = Path(__file__).resolve().parents[1]

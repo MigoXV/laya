@@ -1,4 +1,4 @@
-"""所有运行入口共享 Runtime 或 HTTP 契约。"""
+"""所有运行入口共享 DecisionInferencer 或 HTTP 契约。"""
 
 import asyncio
 import json
@@ -8,8 +8,8 @@ from time import perf_counter
 
 import typer
 
-from laya.config import Config
-from laya.contracts import DecisionRequest
+from laya.configs.settings import Config
+from laya.api.contracts import DecisionRequest
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
@@ -24,7 +24,7 @@ def quantize(
     device: str = typer.Option("cuda:0", envvar="LAYA_DEVICE"),
 ):
     """导出独立动态 W8A8 仓库；不覆盖目标，也不改动源模型。"""
-    from laya.quantization import export_w8a8
+    from laya.quantization.export import export_w8a8
 
     typer.echo(json.dumps(export_w8a8(model_dir, output_dir, device), ensure_ascii=False))
 
@@ -52,18 +52,18 @@ def infer(
     dtype: str | None = typer.Option(None, envvar="LAYA_DTYPE"),
     runner: str | None = typer.Option(None, envvar="LAYA_RUNNER"),
 ):
-    from laya.runtime import Runtime
+    from laya.inferencers.decision import DecisionInferencer
 
     config = Config(
         **{key: value for key, value in (
             ("model_dir", model_dir), ("device", device), ("dtype", dtype), ("runner", runner)
         ) if value is not None}
     )
-    runtime = Runtime(config)
+    inferencer = DecisionInferencer(config)
     try:
-        result = runtime.infer(DecisionRequest.model_validate_json(input_path.read_text()))
+        result = inferencer.infer(DecisionRequest.model_validate_json(input_path.read_text()))
     finally:
-        runtime.close()
+        inferencer.close()
     typer.echo(json.dumps(result, ensure_ascii=False))
 
 
@@ -80,7 +80,7 @@ def serve(
     port: int = typer.Option(10002, envvar="LAYA_PORT"),
 ):
     import uvicorn
-    from laya.api import create_app
+    from laya.api.app import create_app
 
     config = Config(
         **{key: value for key, value in (

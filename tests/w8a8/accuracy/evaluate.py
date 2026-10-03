@@ -12,11 +12,12 @@ import numpy as np
 import torch
 import typer
 
-from laya.config import Config
-from laya.contracts import DecisionRequest
-from laya.cuda_runner import INPUT_KEYS, PreparedModel
-from laya.reference import collate_items
-from laya.runtime import Runtime
+from laya.configs.settings import Config
+from laya.api.contracts import DecisionRequest
+from laya.runners.inputs import INPUT_KEYS
+from laya.runners.prepared import PreparedModel
+from laya.inferencers.batching import collate_items
+from laya.inferencers.decision import DecisionInferencer
 from ..benchmark import capture
 from ..kernels import EVIDENCE, TUNING
 from ..model import eligible, explicit_heads, replace_linears, restore_linears
@@ -52,8 +53,8 @@ def request_from_case(case):
     return DecisionRequest.model_validate({"state": case["state"], "questions": case["questions"]})
 
 
-def prediction(runtime, question, item, logits, acts, expected):
-    answer = runtime.answer(question, item, np.asarray(logits), torch.tensor(acts).softmax(-1).numpy())
+def prediction(inferencer, question, item, logits, acts, expected):
+    answer = inferencer.answer(question, item, np.asarray(logits), torch.tensor(acts).softmax(-1).numpy())
     probabilities = list(answer["probabilities"].values())
     if question.type == "choice":
         target = list(answer["probabilities"]).index(expected)
@@ -132,13 +133,13 @@ def main(data: Path = typer.Option(HERE / "data"), output: Path = typer.Option(H
     for row in json.loads(tuning_file.read_text())["tuning"]:
         TUNING[tuple(row["shape"])] = {k: v for k, v in row.items() if k != "shape"}
     cases, manifest = load_cases(data)
-    runtime = Runtime(Config(model_dir=model_dir, runner="eager", dtype="fp16", max_batch_size=16))
-    model = runtime.runner.model
+    inferencer = DecisionInferencer(Config(model_dir=model_dir, runner="eager", dtype="fp16", max_batch_size=16))
+    model = inferencer.runtime.runner.model
     work, rejected = [], []
     for case in cases:
         try:
             request = request_from_case(case["request"])
-            prepared = runtime.prepare(request)
+            prepared = inferencer.prepare(request)
             for qid, question, item in prepared:
                 work.append({**case, "qid": qid, "question": question, "item": item,
                              "gold": case["request"]["expected"][qid], "predictions": {}})
@@ -149,23 +150,23 @@ def main(data: Path = typer.Option(HERE / "data"), output: Path = typer.Option(H
         raise ValueError(f"评测样本存在 {len(rejected)} 个不能完整编码的请求: {rejected[:3]}")
     result = {"created_at": datetime.now(timezone.utc).isoformat(),
               "revision": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
-              "torch": torch.__version__, "gpu": torch.cuda.get_device_name(0), "runtime": runtime.info,
+              "torch": torch.__version__, "gpu": torch.cuda.get_device_name(0), "runtime": inferencer.runtime.info,
               "data_manifest": manifest, "requests": len(cases), "questions": len(work), "rejected": rejected,
               "quantization": "dynamic per-token A8, per-output-channel W8; no calibration data and no QAT",
               "reference": "original project FP16 autocast, exact unpadded sequence, batch=1"}
     start = perf_counter()
     for index, row in enumerate(work):
-        batch = collate_items([[row["item"]]], runtime.tok.pad_token_id)
+        batch = collate_items([[row["item"]]], inferencer.runtime.tok.pad_token_id)
         tensors = [batch[key].cuda() for key in INPUT_KEYS]
         with torch.autocast("cuda", dtype=torch.float16):
             logits, acts = model(*tensors)
         row["predictions"]["fp16-original"] = prediction(
-            runtime, row["question"], row["item"], logits[0].float().cpu().tolist(),
+            inferencer, row["question"], row["item"], logits[0].float().cpu().tolist(),
             acts[0].float().cpu().tolist(), row["gold"])
         if (index + 1) % 100 == 0:
             print(f"original FP16 {index + 1}/{len(work)}", flush=True)
     result["original_forward_elapsed_s"] = perf_counter() - start
-    prepared = PreparedModel(model, runtime.cfg["input_limits"]["max_len"]).eval()
+    prepared = PreparedModel(model, inferencer.runtime.cfg["input_limits"]["max_len"]).eval()
     explicit_heads(model)
     length = max(len(row["item"]["ids"]) for row in work)
     length = min(1024, 1 << (length - 1).bit_length())
@@ -178,8 +179,8 @@ def main(data: Path = typer.Option(HERE / "data"), output: Path = typer.Option(H
     def cpu_inputs(rows):
         items = [row["item"] for row in rows]
         items += [items[0]] * (batch_size - len(items))
-        batch = collate_items([items], runtime.tok.pad_token_id)
-        padded = {"input_ids": torch.full((batch_size, length), runtime.tok.pad_token_id, dtype=torch.long),
+        batch = collate_items([items], inferencer.runtime.tok.pad_token_id)
+        padded = {"input_ids": torch.full((batch_size, length), inferencer.runtime.tok.pad_token_id, dtype=torch.long),
                   "attention_mask": torch.zeros(batch_size, length, dtype=torch.long),
                   "marker_pos": torch.zeros(batch_size, markers, dtype=torch.long),
                   "marker_mask": torch.zeros(batch_size, markers, dtype=torch.bool),
@@ -212,7 +213,7 @@ def main(data: Path = typer.Option(HERE / "data"), output: Path = typer.Option(H
                 for i, row in enumerate(rows):
                     k = len(row["item"]["markers"])
                     row["predictions"][variant] = prediction(
-                        runtime, row["question"], row["item"], logits[i, :k].tolist(), acts[i].tolist(), row["gold"])
+                        inferencer, row["question"], row["item"], logits[i, :k].tolist(), acts[i].tolist(), row["gold"])
             print(f"{variant} evaluated {len(work)} questions", flush=True)
             del graph, compiled, outputs
         finally:

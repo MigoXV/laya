@@ -14,8 +14,8 @@ import time
 import httpx
 import pytest
 
-from laya.config import Config
-from laya.contracts import DecisionRequest
+from laya.configs.settings import Config
+from laya.api.contracts import DecisionRequest
 from scripts.benchmark_support import compare, stop
 
 
@@ -28,7 +28,7 @@ def test_real_optimized_concurrency_failure_and_restart(runner, tmp_path):
     if os.getenv("LAYA_RUN_OPTIMIZED_E2E") != "1":
         pytest.skip("设置 LAYA_RUN_OPTIMIZED_E2E=1 启用优化服务测试")
     import torch
-    from laya.runtime import Runtime
+    from laya.inferencers.decision import DecisionInferencer
 
     if not torch.cuda.is_available():
         pytest.skip("需要 CUDA")
@@ -38,7 +38,7 @@ def test_real_optimized_concurrency_failure_and_restart(runner, tmp_path):
         "holds": {"type": "noul", "instructions": "小李负责测试吗？"},
     }} for state in ["小李负责测试，小王负责发布。", "小王负责测试，小李负责发布。"]]
     model_dir = os.getenv("LAYA_E2E_MODEL_DIR") or str(Config().model_dir)
-    baseline = Runtime(Config(model_dir=model_dir, runner="eager", dtype="fp16", max_batch_size=1))
+    baseline = DecisionInferencer(Config(model_dir=model_dir, runner="eager", dtype="fp16", max_batch_size=1))
     expected = [baseline.infer(DecisionRequest.model_validate(payload)) for payload in payloads]
     shapes = sorted({(len(item["ids"]), len(item["markers"])) for payload in payloads
                      for _, _, item in baseline.prepare(DecisionRequest.model_validate(payload))})

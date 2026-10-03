@@ -4,10 +4,8 @@ import pytest
 import torch
 from safetensors.torch import load_file, save_file
 
-from laya.quantization import (
-    QuantizationConfig, eligible, install_linears, quantize_weight,
-    read_quantization, validate_weights,
-)
+from laya.quantization.config import QuantizationConfig, read_quantization
+from laya.quantization.transforms import eligible, install_linears, quantize_weight, validate_weights
 
 
 def test_quantization_format_and_unknown_version():
@@ -21,7 +19,7 @@ def test_quantization_format_and_unknown_version():
 
 
 def test_model_path_must_be_explicit(tmp_path, monkeypatch):
-    from laya.config import Config
+    from laya.configs.settings import Config
 
     monkeypatch.delenv("LAYA_MODEL_DIR", raising=False)
     with pytest.raises(ValueError, match="model_dir"):
@@ -35,8 +33,8 @@ def test_model_path_must_be_explicit(tmp_path, monkeypatch):
 @pytest.mark.parametrize("device,dtype", [("cpu", "fp32"), ("cuda:0", "bf16"), ("cuda:0", "fp32")])
 def test_w8a8_rejects_unsupported_runtime_before_loading(tmp_path, device, dtype):
     import json
-    from laya.config import Config
-    from laya.runtime import Runtime
+    from laya.configs.settings import Config
+    from laya.runtime.resources import Runtime
 
     for name in ("model.safetensors", "tokenizer.json"):
         (tmp_path / name).touch()
@@ -47,7 +45,7 @@ def test_w8a8_rejects_unsupported_runtime_before_loading(tmp_path, device, dtype
 
 
 def test_int8_state_roundtrip_and_scale_precision(tmp_path):
-    from laya.runtime import move_model
+    from laya.models.loading import move_model
 
     # 架构构造时决策头可能仍为 FP32；文件参数为 FP16，bias 也须保持 FP16。
     model = torch.nn.Sequential(torch.nn.Linear(32, 256), torch.nn.Linear(256, 1))

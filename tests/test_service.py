@@ -6,9 +6,9 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from laya.api import create_app
-from laya.contracts import Question
-from laya.engine import Engine, EngineError
+from laya.api.app import create_app
+from laya.api.contracts import Question
+from laya.engine.core import Engine, EngineError
 
 
 WORKER = """import sys,json,time

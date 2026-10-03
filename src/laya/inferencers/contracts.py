@@ -1,13 +1,11 @@
-"""外部 typed question 契约；不包含会议业务规则。"""
-
+"""内部推理请求；不依赖外部 SDK。"""
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-
-class Question(BaseModel):
+class InferenceQuestion(BaseModel):
     model_config = ConfigDict(extra="forbid")
     type: Literal["choice", "score", "noul"]
-    instructions: str = Field(min_length=1, max_length=8192)
+    instructions: str = Field(default="", max_length=8192)
     criteria: dict[str, str | None] | list[str] | None = None
 
     @model_validator(mode="after")
@@ -32,13 +30,7 @@ class Question(BaseModel):
         return self
 
 
-class DecisionRequest(BaseModel):
+class InferenceRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     state: str | dict | list
-    questions: dict[str, Question] = Field(min_length=1, max_length=16)
-
-    @model_validator(mode="after")
-    def question_ids(self):
-        if any(not key or len(key) > 128 for key in self.questions):
-            raise ValueError("问题 ID 必须为 1–128 字符")
-        return self
+    questions: dict[str, InferenceQuestion] = Field(min_length=1, max_length=16)

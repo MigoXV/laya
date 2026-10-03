@@ -30,7 +30,7 @@ class Engine:
         self.command = command or [
             sys.executable,
             "-m",
-            "laya.worker",
+            "laya.engine.worker",
             config.model_dump_json(),
         ]
         self.queue = asyncio.Queue(maxsize=config.queue_size)

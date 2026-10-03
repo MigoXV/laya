@@ -12,7 +12,7 @@ import time
 import httpx
 import pytest
 
-from laya.config import Config
+from laya.configs.settings import Config
 
 
 pytestmark = pytest.mark.e2e
@@ -114,7 +114,7 @@ def test_real_decisions_and_validation(service):
 
 
 def test_reference_alignment(service):
-    from laya.checks import check_reference
+    from tests.support.alignment import check_reference
 
     _, metadata = service
     model_dir = Path(os.getenv("LAYA_E2E_MODEL_DIR") or Config().model_dir)

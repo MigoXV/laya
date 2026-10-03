@@ -6,16 +6,16 @@ import sys
 
 
 def main():
-    from .config import Config
-    from .contracts import DecisionRequest
-    from .runtime import Runtime
+    from laya.configs.settings import Config
+    from laya.inferencers.contracts import InferenceRequest
+    from laya.inferencers.decision import DecisionInferencer
 
     config = Config.model_validate_json(sys.argv[1])
     # 模型库和它的子进程可写 stdout；协议独占原 stdout 的副本。
     protocol = os.fdopen(os.dup(sys.stdout.fileno()), "w", buffering=1)
     os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
-    runtime = Runtime(config)
-    warmup = DecisionRequest(
+    inferencer = DecisionInferencer(config)
+    warmup = InferenceRequest(
         state="测试服务是否就绪。",
         questions={
             "ready": {
@@ -26,8 +26,8 @@ def main():
         },
     )
     try:
-        runtime.infer(warmup)
-        print(json.dumps({"ready": runtime.info}), file=protocol, flush=True)
+        inferencer.infer(warmup)
+        print(json.dumps({"ready": inferencer.runtime.info}), file=protocol, flush=True)
         for line in sys.stdin:
             try:
                 payload = json.loads(line)
@@ -39,12 +39,12 @@ def main():
                         raise ValueError("invalid_worker_batch_ids")
                     for entry in entries:
                         try:
-                            requests.append(DecisionRequest.model_validate(entry["payload"]))
+                            requests.append(InferenceRequest.model_validate(entry["payload"]))
                         except ValueError as exc:
                             requests.append(None)
                             replies.append({"id": entry["id"], "error": str(exc), "status": 422})
                     valid = [request for request in requests if request is not None]
-                    results = iter(runtime.infer_many(valid))
+                    results = iter(inferencer.infer_many(valid))
                     for entry, request in zip(entries, requests):
                         if request is None:
                             continue
@@ -52,12 +52,12 @@ def main():
                         reply = {"error": str(result), "status": 422} if isinstance(result, ValueError) else {"result": result}
                         replies.append({"id": entry["id"], **reply})
                     response = {"version": 1, "replies": replies,
-                                "batches": runtime.last_batches,
-                                "runner_metrics": getattr(runtime.runner, "metrics", lambda: {})()}
+                                "batches": inferencer.last_batches,
+                                "runner_metrics": getattr(inferencer.runtime.runner, "metrics", lambda: {})()}
                 else:
-                    result = runtime.infer(DecisionRequest.model_validate(payload))
-                    response = {"result": result, "batches": runtime.last_batches,
-                                "runner_metrics": getattr(runtime.runner, "metrics", lambda: {})()}
+                    result = inferencer.infer(InferenceRequest.model_validate(payload))
+                    response = {"result": result, "batches": inferencer.last_batches,
+                                "runner_metrics": getattr(inferencer.runtime.runner, "metrics", lambda: {})()}
             except ValueError as exc:
                 response = {"error": str(exc), "status": 422}
             except Exception:
@@ -67,7 +67,7 @@ def main():
                 response = {"error": "inference_failed", "status": 500}
             print(json.dumps(response, ensure_ascii=False), file=protocol, flush=True)
     finally:
-        runtime.close()
+        inferencer.close()
         protocol.close()
 
 
